@@ -50,7 +50,14 @@ Ouvre [http://127.0.0.1:5173](http://127.0.0.1:5173)
 Déclencher le sync à la main (avec le secret) :
 
 ```bash
-curl -H "Authorization: Bearer $CRON_SECRET" https://ton-app.vercel.app/api/cron/scrape
+curl -H "Authorization: Bearer $CRON_SECRET" https://ton-app.vercel.app/api/cron_scrape
+```
+
+Vérifier que Supabase est vu par l’API :
+
+```bash
+curl https://ton-app.vercel.app/api/health
+# → { "supabase": true, "version": "0.4.1", ... }
 ```
 
 ## Vercel

@@ -5,7 +5,7 @@
   "buildCommand": "npm run build --prefix web",
   "outputDirectory": "web/dist",
   "functions": {
-    "api/cron/scrape.py": {
+    "api/cron_scrape.py": {
       "maxDuration": 300,
       "memory": 1024
     },
@@ -16,7 +16,7 @@
   },
   "crons": [
     {
-      "path": "/api/cron/scrape",
+      "path": "/api/cron_scrape",
       "schedule": "0 2 * * *"
     }
   ],

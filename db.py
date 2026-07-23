@@ -53,15 +53,18 @@ def get_snapshot(brand: str, day: date) -> dict[str, Any] | None:
 
 def upsert_snapshot(brand: str, day: date, payload: dict[str, Any]) -> None:
     client = get_client()
-    client.table(TABLE).upsert(
-        {
-            "brand": brand,
-            "day": day.isoformat(),
-            "payload": payload,
-            "scraped_at": datetime.now(timezone.utc).isoformat(),
-        },
-        on_conflict="brand,day",
-    ).execute()
+    try:
+        client.table(TABLE).upsert(
+            {
+                "brand": brand,
+                "day": day.isoformat(),
+                "payload": payload,
+                "scraped_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="brand,day",
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        raise DatabaseError(f"Écriture Supabase échouée: {exc}") from exc
 
 
 def purge_before(day: date) -> int:

@@ -38,11 +38,12 @@ if os.getenv("VERCEL") != "1":
 
 
 @app.get("/")
+@app.get("/api/health")
 async def home() -> dict:
     return {
         "app": "CineParis API",
+        "version": "0.4.1",
         "docs": "/docs",
-        "frontend": "http://127.0.0.1:5173",
         "health": "ok",
         "supabase": supabase_configured(),
     }
@@ -137,6 +138,7 @@ async def showtimes(
 
 
 @app.get("/api/cron/scrape")
+@app.get("/api/cron_scrape")
 async def cron_scrape(
     authorization: str | None = Header(default=None),
 ) -> dict:
