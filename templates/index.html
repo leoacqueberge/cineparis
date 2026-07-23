@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>CineParis — Pass UGC</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/geist@1.3.1/dist/fonts/geist-sans/style.min.css"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <img
+          class="logo"
+          src="/static/assets/logo.png"
+          width="36"
+          height="36"
+          alt="CineParis"
+        />
+        <span class="slash" aria-hidden="true"></span>
+        <h1>Pass UGC</h1>
+      </header>
+
+      <div class="rule" aria-hidden="true"></div>
+
+      <nav class="brands" aria-label="Groupes de cinémas">
+        {% for brand in brands %}
+        <button
+          type="button"
+          class="brand-btn{% if brand.id == default_brand %} is-active{% endif %}"
+          data-brand="{{ brand.id }}"
+          aria-pressed="{{ 'true' if brand.id == default_brand else 'false' }}"
+          title="{{ brand.label }}"
+        >
+          <img src="{{ brand.icon }}" alt="{{ brand.label }}" width="48" height="48" />
+        </button>
+        {% endfor %}
+      </nav>
+
+      <div class="rule" aria-hidden="true"></div>
+
+      <div class="days" id="days" role="radiogroup" aria-label="Jour">
+        {% for d in days %}
+        <label class="day">
+          <input
+            type="radio"
+            name="day"
+            value="{{ d.value }}"
+            {% if loop.first %}checked{% endif %}
+          />
+          <span>{{ d.label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite">Chargement…</p>
+
+      <main id="feed" class="feed" hidden></main>
+    </div>
+
+    <dialog id="sheet" class="sheet">
+      <form method="dialog" class="sheet-head">
+        <button type="submit" class="sheet-close" aria-label="Fermer">✕</button>
+      </form>
+      <div id="sheet-body" class="sheet-body"></div>
+    </dialog>
+
+    <script>
+      window.__DEFAULT_BRAND__ = {{ default_brand|tojson }};
+    </script>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
