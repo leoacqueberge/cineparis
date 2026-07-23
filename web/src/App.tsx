@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { SearchIcon, XIcon } from "lucide-react"
 import {
   BRANDS,
   buildDays,
@@ -17,6 +18,14 @@ import { cn } from "@/lib/utils"
 
 const DAYS = buildDays()
 
+function normalize(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .trim()
+}
+
 export default function App() {
   const [brand, setBrand] = useState<BrandId>("all")
   const [day, setDay] = useState(DAYS[0].value)
@@ -24,6 +33,9 @@ export default function App() {
   const [status, setStatus] = useState("Chargement…")
   const [error, setError] = useState(false)
   const [selected, setSelected] = useState<Movie | null>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -52,6 +64,21 @@ export default function App() {
     }
   }, [brand, day])
 
+  useEffect(() => {
+    if (!searchOpen) return
+    searchRef.current?.focus()
+  }, [searchOpen])
+
+  const filteredMovies = useMemo(() => {
+    const q = normalize(query)
+    if (!q) return movies
+    return movies.filter((movie) => {
+      const title = normalize(movie.title)
+      const original = normalize(movie.original_title || "")
+      return title.includes(q) || original.includes(q)
+    })
+  }, [movies, query])
+
   const meta = selected
     ? [
         selected.runtime,
@@ -61,6 +88,9 @@ export default function App() {
         .filter(Boolean)
         .join(" · ")
     : ""
+
+  const emptySearch =
+    !error && !status && query.trim() && filteredMovies.length === 0
 
   return (
     <div className="flex min-h-dvh justify-center bg-white text-black">
@@ -112,7 +142,48 @@ export default function App() {
               </button>
             )
           })}
+
+          <button
+            type="button"
+            title="Rechercher un film"
+            aria-label="Rechercher un film"
+            aria-pressed={searchOpen}
+            onClick={() => {
+              setSearchOpen((open) => {
+                if (open) setQuery("")
+                return !open
+              })
+            }}
+            className={cn(
+              "ml-auto flex size-12 shrink-0 items-center justify-center rounded-[10px] bg-white transition-[opacity,transform] active:scale-95 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]",
+              searchOpen ? "opacity-100" : "opacity-[0.42]",
+            )}
+          >
+            {searchOpen ? (
+              <XIcon className="size-5" strokeWidth={2} />
+            ) : (
+              <SearchIcon className="size-5" strokeWidth={2} />
+            )}
+          </button>
         </nav>
+
+        {searchOpen ? (
+          <div className="px-5">
+            <label className="sr-only" htmlFor="movie-search">
+              Rechercher un film
+            </label>
+            <input
+              id="movie-search"
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Rechercher un film…"
+              autoComplete="off"
+              className="h-11 w-full rounded-[10px] border-0 bg-[#f5f5f5] px-3.5 text-[15px] font-medium outline-none ring-0 placeholder:text-[#6b6b6b] focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)]"
+            />
+          </div>
+        ) : null}
 
         <div className="h-0 w-full border-t border-[#dbdbdb]" />
 
@@ -155,8 +226,14 @@ export default function App() {
           </p>
         ) : null}
 
+        {emptySearch ? (
+          <p className="px-5 pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
+            Aucun film pour « {query.trim()} ».
+          </p>
+        ) : null}
+
         <main className="flex w-full flex-col items-center gap-5 px-0 py-1">
-          {movies.map((movie) => (
+          {filteredMovies.map((movie) => (
             <button
               key={String(movie.id)}
               type="button"
