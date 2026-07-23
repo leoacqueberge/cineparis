@@ -180,7 +180,7 @@ export default function App() {
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Rechercher un film…"
               autoComplete="off"
-              className="h-11 w-full rounded-[10px] border-0 bg-[#f5f5f5] px-3.5 text-[15px] font-medium outline-none ring-0 placeholder:text-[#6b6b6b] focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)]"
+              className="h-11 w-full rounded-[10px] border-0 bg-[#f5f5f5] px-3.5 text-base font-medium outline-none ring-0 placeholder:text-[#6b6b6b] focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)]"
             />
           </div>
         ) : null}
