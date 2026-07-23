@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .DS_Store
 .env
+.env.local
 *.html.bak
 web/node_modules/
 web/dist/

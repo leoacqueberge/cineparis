@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import os
 from datetime import date, timedelta
 from pathlib import Path
 
-import os
-
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from db import DatabaseError, get_snapshot, supabase_configured, upsert_snapshot
 from scraper import AllocineError, fetch_movies_for_brand, fetch_showtimes
+from sync import run_daily_sync
 from theaters import BRANDS, THEATERS, get_theater
 
 ROOT = Path(__file__).parent
@@ -24,7 +25,7 @@ _EXTRA_ORIGINS = [
     if origin.strip()
 ]
 
-app = FastAPI(title="CineParis", version="0.3.0")
+app = FastAPI(title="CineParis", version="0.4.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[*_DEFAULT_ORIGINS, *_EXTRA_ORIGINS],
@@ -32,7 +33,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# Local/dev only — Vercel serverless has no durable static mount.
 if os.getenv("VERCEL") != "1":
     app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
@@ -44,6 +44,7 @@ async def home() -> dict:
         "docs": "/docs",
         "frontend": "http://127.0.0.1:5173",
         "health": "ok",
+        "supabase": supabase_configured(),
     }
 
 
@@ -74,8 +75,33 @@ async def movies(
     if day_value < date.today() - timedelta(days=1):
         raise HTTPException(status_code=400, detail="Date trop ancienne")
 
+    # 1) Fast path: Supabase snapshot
+    if supabase_configured():
+        try:
+            snapshot = get_snapshot(brand_id, day_value)
+            if snapshot:
+                return snapshot
+        except DatabaseError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        # 2) Cache miss: scrape once, store, return
+        try:
+            payload = await fetch_movies_for_brand(brand_id, day_value)
+            upsert_snapshot(brand_id, day_value, payload)
+            payload = dict(payload)
+            payload["source"] = "allocine+supabase"
+            return payload
+        except AllocineError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Échec du scraping: {exc}") from exc
+
+    # 3) No Supabase: live scrape (local/dev)
     try:
-        return await fetch_movies_for_brand(brand_id, day_value)
+        payload = await fetch_movies_for_brand(brand_id, day_value)
+        payload = dict(payload)
+        payload["source"] = "allocine"
+        return payload
     except AllocineError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -110,10 +136,23 @@ async def showtimes(
     return payload
 
 
-def _day_label(day: date, offset: int) -> str:
-    if offset == 0:
-        return "Aujourd'hui"
-    if offset == 1:
-        return "Demain"
-    weekdays = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
-    return f"{weekdays[day.weekday()]} {day.day}/{day.month}"
+@app.get("/api/cron/scrape")
+async def cron_scrape(
+    authorization: str | None = Header(default=None),
+) -> dict:
+    """Vercel Cron entrypoint — scrape AlloCiné into Supabase, purge old days."""
+    secret = os.getenv("CRON_SECRET", "").strip()
+    if not secret:
+        raise HTTPException(status_code=503, detail="CRON_SECRET manquant")
+
+    expected = f"Bearer {secret}"
+    if authorization != expected:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if not supabase_configured():
+        raise HTTPException(status_code=503, detail="Supabase non configuré")
+
+    try:
+        return await run_daily_sync()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Sync échouée: {exc}") from exc

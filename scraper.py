@@ -188,42 +188,27 @@ async def fetch_showtimes(
     }
 
 
-async def fetch_movies_for_brand(
+def aggregate_brand_payload(
     brand: str,
-    day: date | None = None,
+    day: date,
+    theater_payloads: list[dict[str, Any]],
+    *,
+    theaters_queried: int,
+    errors: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Aggregate movies + showtimes across all theaters of a brand."""
+    """Build the /api/movies payload from per-theater scrape results."""
     brand = brand.strip().lower()
-    day = day or date.today()
     day_str = day.isoformat()
-    cache_key = f"{brand}:{day_str}"
-
-    cached = _CACHE.get(cache_key)
-    if cached and (time.time() - cached[0]) < _CACHE_TTL:
-        return cached[1]
-
-    theaters = theaters_for_brand(brand)
-    if not theaters:
-        raise AllocineError(f"Aucun cinéma pour le groupe « {brand} »")
-
-    semaphore = asyncio.Semaphore(_FETCH_CONCURRENCY)
-    errors: list[str] = []
-
-    async def one(theater: dict[str, str]) -> dict[str, Any] | None:
-        async with semaphore:
-            try:
-                return await fetch_showtimes(theater["id"], day)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{theater['name']}: {exc}")
-                return None
-
-    results = await asyncio.gather(*[one(t) for t in theaters])
+    allowed_ids = {t["id"] for t in theaters_for_brand(brand)}
 
     movies_by_id: dict[Any, dict[str, Any]] = {}
-    for payload in results:
-        if not payload:
-            continue
+    theaters_ok = 0
+
+    for payload in theater_payloads:
         theater = payload["theater"]
+        if theater["id"] not in allowed_ids:
+            continue
+        theaters_ok += 1
         for movie in payload["movies"]:
             movie_id = movie["id"] or movie["title"]
             entry = movies_by_id.get(movie_id)
@@ -258,14 +243,84 @@ async def fetch_movies_for_brand(
         movie["session_count"] = sum(len(t["sessions"]) for t in movie["theaters"])
         movie["theater_count"] = len(movie["theaters"])
 
-    payload = {
+    return {
         "brand": brand,
         "date": day_str,
         "movies": movies,
         "count": len(movies),
-        "theaters_queried": len(theaters),
-        "theaters_ok": len([r for r in results if r]),
-        "errors": errors[:8],
+        "theaters_queried": theaters_queried if brand == "all" else len(allowed_ids),
+        "theaters_ok": theaters_ok,
+        "errors": (errors or [])[:8],
     }
+
+
+async def fetch_all_theater_payloads(day: date) -> tuple[list[dict[str, Any]], list[str]]:
+    """Scrape every known theater once for a given day."""
+    theaters = theaters_for_brand("all")
+    semaphore = asyncio.Semaphore(_FETCH_CONCURRENCY)
+    errors: list[str] = []
+
+    async def one(theater: dict[str, str]) -> dict[str, Any] | None:
+        async with semaphore:
+            try:
+                return await fetch_showtimes(theater["id"], day)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{theater['name']}: {exc}")
+                return None
+
+    results = await asyncio.gather(*[one(t) for t in theaters])
+    payloads = [item for item in results if item]
+    return payloads, errors
+
+
+async def fetch_movies_for_brand(
+    brand: str,
+    day: date | None = None,
+) -> dict[str, Any]:
+    """Aggregate movies + showtimes across all theaters of a brand."""
+    brand = brand.strip().lower()
+    day = day or date.today()
+    day_str = day.isoformat()
+    cache_key = f"{brand}:{day_str}"
+
+    cached = _CACHE.get(cache_key)
+    if cached and (time.time() - cached[0]) < _CACHE_TTL:
+        return cached[1]
+
+    theaters = theaters_for_brand(brand)
+    if not theaters:
+        raise AllocineError(f"Aucun cinéma pour le groupe « {brand} »")
+
+    if brand == "all":
+        theater_payloads, errors = await fetch_all_theater_payloads(day)
+        payload = aggregate_brand_payload(
+            brand,
+            day,
+            theater_payloads,
+            theaters_queried=len(theaters_for_brand("all")),
+            errors=errors,
+        )
+    else:
+        semaphore = asyncio.Semaphore(_FETCH_CONCURRENCY)
+        errors: list[str] = []
+
+        async def one(theater: dict[str, str]) -> dict[str, Any] | None:
+            async with semaphore:
+                try:
+                    return await fetch_showtimes(theater["id"], day)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"{theater['name']}: {exc}")
+                    return None
+
+        results = await asyncio.gather(*[one(t) for t in theaters])
+        theater_payloads = [item for item in results if item]
+        payload = aggregate_brand_payload(
+            brand,
+            day,
+            theater_payloads,
+            theaters_queried=len(theaters),
+            errors=errors,
+        )
+
     _CACHE[cache_key] = (time.time(), payload)
     return payload

@@ -5,10 +5,20 @@
   "buildCommand": "npm run build --prefix web",
   "outputDirectory": "web/dist",
   "functions": {
+    "api/cron/scrape.py": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
     "api/**/*.py": {
       "maxDuration": 60,
       "memory": 1024
     }
   },
+  "crons": [
+    {
+      "path": "/api/cron/scrape",
+      "schedule": "0 2 * * *"
+    }
+  ],
   "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
 }
