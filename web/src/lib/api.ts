@@ -68,12 +68,23 @@ export function buildDays(count = 7) {
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? ""
 
+async function parseJson(response: Response): Promise<unknown> {
+  const text = await response.text()
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    throw new Error(
+      "L’API a renvoyé du HTML au lieu de JSON. Redeploy avec la fonction /api, ou définis VITE_API_URL.",
+    )
+  }
+}
+
 export async function fetchMovies(brand: BrandId, day: string): Promise<MoviesResponse> {
   const params = new URLSearchParams({ brand, day })
   const response = await fetch(`${API_BASE}/api/movies?${params}`)
-  const payload = await response.json()
+  const payload = (await parseJson(response)) as { detail?: string } & MoviesResponse
   if (!response.ok) {
     throw new Error(payload.detail || "Erreur serveur")
   }
-  return payload as MoviesResponse
+  return payload
 }

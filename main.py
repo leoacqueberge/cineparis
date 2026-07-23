@@ -32,7 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
+# Local/dev only — Vercel serverless has no durable static mount.
+if os.getenv("VERCEL") != "1":
+    app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 
 @app.get("/")
@@ -41,6 +43,7 @@ async def home() -> dict:
         "app": "CineParis API",
         "docs": "/docs",
         "frontend": "http://127.0.0.1:5173",
+        "health": "ok",
     }
 
 

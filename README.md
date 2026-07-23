@@ -27,20 +27,22 @@ npm run dev
 Ouvre [http://127.0.0.1:5173](http://127.0.0.1:5173)  
 (Vite proxy `/api` → `http://127.0.0.1:8001`)
 
-## Vercel (front)
+## Vercel
 
-Vercel doit servir le build Vite dans `web/`, **pas** le `main.py` FastAPI.
+Le `vercel.json` à la racine :
+- build le front Vite (`web/dist`)
+- expose FastAPI via `api/[...path].py` sur `/api/*`
 
-1. Project Settings → **Root Directory** = `web`  
-   (ou laisse la racine : le `vercel.json` à la racine build déjà `web/dist`)
-2. Redeploy
-3. Pour les séances en prod, héberge l’API ailleurs (Railway, Render, Fly…) puis ajoute la variable d’env Vercel :
+**Root Directory** : laisse vide (racine du repo), pas `web`.
+
+Le filtre **All** scrape beaucoup de cinémas : peut timeout sur le plan Hobby (limite ~10–60s). Préfère UGC / mk2 / Dulac si ça échoue.
+
+Optionnel si l’API est hébergée ailleurs :
 
 ```bash
 VITE_API_URL=https://ton-api.example.com
+CORS_ORIGINS=https://ton-app.vercel.app
 ```
-
-Et côté API : `CORS_ORIGINS=https://ton-app.vercel.app`
 
 ## API
 
