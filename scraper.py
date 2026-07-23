@@ -228,11 +228,14 @@ def aggregate_brand_payload(
             elif not entry.get("poster") and movie.get("poster"):
                 entry["poster"] = movie["poster"]
 
+            catalog = get_theater(theater["id"]) or {}
             entry["theaters"].append(
                 {
                     "id": theater["id"],
                     "name": theater["name"],
                     "address": theater.get("address") or "",
+                    "lat": catalog.get("lat"),
+                    "lng": catalog.get("lng"),
                     "sessions": movie["sessions"],
                 }
             )

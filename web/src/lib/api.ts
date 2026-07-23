@@ -18,6 +18,8 @@ export type TheaterShowtimes = {
   id: string
   name: string
   address: string
+  lat?: number | null
+  lng?: number | null
   sessions: Session[]
 }
 
@@ -45,12 +47,23 @@ export type MoviesResponse = {
   errors: string[]
 }
 
+export type Theater = {
+  id: string
+  name: string
+  area: string
+  brand: string
+  lat: number
+  lng: number
+}
+
 export const BRANDS: Brand[] = [
   { id: "all", label: "All", icon: "/assets/all.svg" },
   { id: "ugc", label: "UGC", icon: "/assets/ugc.png" },
   { id: "mk2", label: "mk2", icon: "/assets/mk2.png" },
   { id: "dulac", label: "Dulac Cinémas", icon: "/assets/dulac.png" },
 ]
+
+export const NEARBY_RADIUS_KM = 1
 
 export function buildDays(count = 7) {
   const weekdays = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
@@ -64,6 +77,27 @@ export function buildDays(count = 7) {
     if (offset === 1) label = "Demain"
     return { value, label }
   })
+}
+
+/** Haversine distance in kilometers. */
+export function distanceKm(
+  a: { lat: number; lng: number },
+  b: { lat: number; lng: number },
+) {
+  const toRad = (deg: number) => (deg * Math.PI) / 180
+  const dLat = toRad(b.lat - a.lat)
+  const dLng = toRad(b.lng - a.lng)
+  const lat1 = toRad(a.lat)
+  const lat2 = toRad(b.lat)
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * 6371 * Math.asin(Math.sqrt(h))
+}
+
+export function formatDistanceKm(km: number) {
+  if (km < 0.1) return "<0.1km"
+  return `${km.toFixed(1)}km`
 }
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? ""
@@ -87,4 +121,15 @@ export async function fetchMovies(brand: BrandId, day: string): Promise<MoviesRe
     throw new Error(payload.detail || "Erreur serveur")
   }
   return payload
+}
+
+export async function fetchTheaters(): Promise<Theater[]> {
+  const response = await fetch(`${API_BASE}/api/theaters`)
+  const payload = (await parseJson(response)) as Theater[] | { detail?: string }
+  if (!response.ok) {
+    throw new Error(
+      (payload as { detail?: string }).detail || "Impossible de charger les cinémas.",
+    )
+  }
+  return payload as Theater[]
 }

@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { SearchIcon, XIcon } from "lucide-react"
+import { SmoothCorners } from "@lisse/react"
+import { XIcon } from "lucide-react"
 import {
   BRANDS,
+  NEARBY_RADIUS_KM,
   buildDays,
+  distanceKm,
   fetchMovies,
+  formatDistanceKm,
   type BrandId,
   type Movie,
+  type Session,
 } from "@/lib/api"
+import { THEATER_COORDS } from "@/lib/theaters"
+import { corners } from "@/lib/squircle"
 import {
   Dialog,
   DialogDescription,
@@ -18,12 +25,23 @@ import { cn } from "@/lib/utils"
 
 const DAYS = buildDays()
 
+type NearbyTheater = {
+  id: string
+  name: string
+  distanceKm: number
+  movies: { title: string; time: string; sessions: Session[]; movie: Movie }[]
+}
+
 function normalize(value: string) {
   return value
     .normalize("NFD")
     .replace(/\p{M}/gu, "")
     .toLowerCase()
     .trim()
+}
+
+function earliestTime(sessions: Session[]) {
+  return [...sessions].map((s) => s.time).sort()[0] ?? ""
 }
 
 export default function App() {
@@ -35,6 +53,11 @@ export default function App() {
   const [selected, setSelected] = useState<Movie | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
+  const [nearbyOpen, setNearbyOpen] = useState(false)
+  const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(
+    null,
+  )
+  const [geoStatus, setGeoStatus] = useState("")
   const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -69,6 +92,42 @@ export default function App() {
     searchRef.current?.focus()
   }, [searchOpen])
 
+  function enableNearby() {
+    if (!navigator.geolocation) {
+      setGeoStatus("La géolocalisation n’est pas dispo sur cet appareil.")
+      setNearbyOpen(true)
+      return
+    }
+    setGeoStatus("Localisation…")
+    setNearbyOpen(true)
+    setSearchOpen(false)
+    setQuery("")
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserPos({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        setGeoStatus("")
+      },
+      (err) => {
+        setUserPos(null)
+        if (err.code === err.PERMISSION_DENIED) {
+          setGeoStatus("Autorise la localisation pour voir les cinémas proches.")
+        } else {
+          setGeoStatus("Impossible d’obtenir ta position.")
+        }
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60_000 },
+    )
+  }
+
+  function toggleNearby() {
+    if (nearbyOpen) {
+      setNearbyOpen(false)
+      setGeoStatus("")
+      return
+    }
+    enableNearby()
+  }
+
   const filteredMovies = useMemo(() => {
     const q = normalize(query)
     if (!q) return movies
@@ -78,6 +137,87 @@ export default function App() {
       return title.includes(q) || original.includes(q)
     })
   }, [movies, query])
+
+  const nearbyTheaters = useMemo((): NearbyTheater[] => {
+    if (!nearbyOpen || !userPos) return []
+
+    const byTheater = new Map<
+      string,
+      {
+        id: string
+        name: string
+        distanceKm: number
+        movies: Map<
+          string,
+          { title: string; sessions: Session[]; movie: Movie }
+        >
+      }
+    >()
+
+    for (const movie of movies) {
+      for (const theater of movie.theaters) {
+        const catalog = THEATER_COORDS[theater.id]
+        const lat =
+          typeof theater.lat === "number" ? theater.lat : catalog?.lat
+        const lng =
+          typeof theater.lng === "number" ? theater.lng : catalog?.lng
+        if (typeof lat !== "number" || typeof lng !== "number") continue
+
+        const km = distanceKm(userPos, { lat, lng })
+        if (km > NEARBY_RADIUS_KM) continue
+
+        let entry = byTheater.get(theater.id)
+        if (!entry) {
+          entry = {
+            id: theater.id,
+            name: theater.name || catalog?.name || theater.id,
+            distanceKm: km,
+            movies: new Map(),
+          }
+          byTheater.set(theater.id, entry)
+        }
+
+        const key = String(movie.id)
+        const existing = entry.movies.get(key)
+        if (existing) {
+          existing.sessions = [...existing.sessions, ...theater.sessions]
+        } else {
+          entry.movies.set(key, {
+            title: movie.title,
+            sessions: [...theater.sessions],
+            movie,
+          })
+        }
+      }
+    }
+
+    const q = normalize(query)
+    return [...byTheater.values()]
+      .map((theater) => {
+        let list = [...theater.movies.values()].map((item) => ({
+          title: item.title,
+          time: earliestTime(item.sessions),
+          sessions: item.sessions,
+          movie: item.movie,
+        }))
+        if (q) {
+          list = list.filter(
+            (item) =>
+              normalize(item.title).includes(q) ||
+              normalize(theater.name).includes(q),
+          )
+        }
+        list.sort((a, b) => a.time.localeCompare(b.time) || a.title.localeCompare(b.title))
+        return {
+          id: theater.id,
+          name: theater.name,
+          distanceKm: theater.distanceKm,
+          movies: list,
+        }
+      })
+      .filter((theater) => theater.movies.length > 0)
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+  }, [nearbyOpen, userPos, movies, query])
 
   const meta = selected
     ? [
@@ -90,24 +230,38 @@ export default function App() {
     : ""
 
   const emptySearch =
-    !error && !status && query.trim() && filteredMovies.length === 0
+    !error &&
+    !status &&
+    query.trim() &&
+    (nearbyOpen ? nearbyTheaters.length === 0 : filteredMovies.length === 0)
+
+  const nearbyEmpty =
+    nearbyOpen &&
+    !geoStatus &&
+    userPos &&
+    !status &&
+    !error &&
+    !query.trim() &&
+    nearbyTheaters.length === 0
 
   return (
     <div className="flex min-h-dvh justify-center bg-white text-black">
       <div className="flex w-full min-h-dvh flex-col gap-[15px] py-3 pb-12 md:w-[402px] md:border-x md:border-[#dbdbdb]">
         <header className="flex h-9 items-center gap-2.5 px-5">
-          <img
+          <SmoothCorners
+            as="img"
+            corners={corners(18)}
             src="/assets/logo.png"
             alt="CineParis"
             width={36}
             height={36}
-            className="size-9 shrink-0 rounded-full bg-black object-cover"
+            className="size-9 shrink-0 animate-[spin_12s_linear_infinite] bg-black object-cover motion-reduce:animate-none"
           />
           <span
             aria-hidden
             className="h-[30px] w-0 shrink-0 border-l border-[#dbdbdb] rotate-[15deg]"
           />
-          <h1 className="text-2xl font-medium leading-8 tracking-normal">
+          <h1 className="text-2xl font-bold leading-8 tracking-normal">
             Pass UGC
           </h1>
         </header>
@@ -120,15 +274,26 @@ export default function App() {
         >
           {BRANDS.map((item) => {
             const active = brand === item.id
+            const isGlyph = item.id === "all"
             return (
-              <button
+              <SmoothCorners
                 key={item.id}
+                as="button"
                 type="button"
                 title={item.label}
                 aria-pressed={active}
-                onClick={() => setBrand(item.id)}
+                onClick={() => {
+                  setBrand(item.id)
+                }}
+                corners={corners(10)}
+                innerBorder={
+                  isGlyph
+                    ? undefined
+                    : { width: 1, color: "#000000", opacity: 0.1 }
+                }
                 className={cn(
-                  "rounded-[10px] p-0 transition-[opacity,transform] active:scale-95",
+                  "p-0 transition-[opacity,transform] active:scale-95",
+                  isGlyph ? "bg-black" : "bg-white",
                   active ? "opacity-100" : "opacity-[0.42]",
                 )}
               >
@@ -137,34 +302,66 @@ export default function App() {
                   alt={item.label}
                   width={48}
                   height={48}
-                  className="size-12 rounded-[10px] bg-white object-cover shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]"
+                  className="size-12 object-cover"
                 />
-              </button>
+              </SmoothCorners>
             )
           })}
 
-          <button
-            type="button"
-            title="Rechercher un film"
-            aria-label="Rechercher un film"
-            aria-pressed={searchOpen}
-            onClick={() => {
-              setSearchOpen((open) => {
-                if (open) setQuery("")
-                return !open
-              })
-            }}
-            className={cn(
-              "ml-auto flex size-12 shrink-0 items-center justify-center rounded-[10px] bg-white transition-[opacity,transform] active:scale-95 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.1)]",
-              searchOpen ? "opacity-100" : "opacity-[0.42]",
-            )}
-          >
-            {searchOpen ? (
-              <XIcon className="size-5" strokeWidth={2} />
-            ) : (
-              <SearchIcon className="size-5" strokeWidth={2} />
-            )}
-          </button>
+          <div className="ml-auto flex items-center gap-2.5">
+            <SmoothCorners
+              as="button"
+              type="button"
+              title="Cinémas à proximité"
+              aria-label="Cinémas à proximité (1 km)"
+              aria-pressed={nearbyOpen}
+              onClick={toggleNearby}
+              corners={corners(10)}
+              className={cn(
+                "flex size-12 shrink-0 items-center justify-center bg-black p-0 transition-[opacity,transform] active:scale-95",
+                nearbyOpen ? "opacity-100" : "opacity-[0.42]",
+              )}
+            >
+              <img
+                src="/assets/location.svg"
+                alt=""
+                width={48}
+                height={48}
+                className="size-12"
+              />
+            </SmoothCorners>
+
+            <SmoothCorners
+              as="button"
+              type="button"
+              title="Rechercher un film"
+              aria-label="Rechercher un film"
+              aria-pressed={searchOpen}
+              onClick={() => {
+                setSearchOpen((open) => {
+                  if (open) setQuery("")
+                  return !open
+                })
+              }}
+              corners={corners(10)}
+              className={cn(
+                "flex size-12 shrink-0 items-center justify-center bg-black p-0 transition-[opacity,transform] active:scale-95",
+                searchOpen ? "opacity-100" : "opacity-[0.42]",
+              )}
+            >
+              {searchOpen ? (
+                <XIcon className="size-5 text-white" strokeWidth={2} />
+              ) : (
+                <img
+                  src="/assets/search.svg"
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="size-12"
+                />
+              )}
+            </SmoothCorners>
+          </div>
         </nav>
 
         {searchOpen ? (
@@ -172,15 +369,21 @@ export default function App() {
             <label className="sr-only" htmlFor="movie-search">
               Rechercher un film
             </label>
-            <input
+            <SmoothCorners
+              as="input"
               id="movie-search"
               ref={searchRef}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Rechercher un film…"
+              placeholder={
+                nearbyOpen
+                  ? "Rechercher un film ou un cinéma…"
+                  : "Rechercher un film…"
+              }
               autoComplete="off"
-              className="h-11 w-full rounded-[10px] border-0 bg-[#f5f5f5] px-3.5 text-base font-medium outline-none ring-0 placeholder:text-[#6b6b6b] focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)]"
+              corners={corners(10)}
+              className="h-11 w-full border-0 bg-[#f5f5f5] px-3.5 text-base font-medium outline-none ring-0 placeholder:text-[#6b6b6b] focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)]"
             />
           </div>
         ) : null}
@@ -188,33 +391,35 @@ export default function App() {
         <div className="h-0 w-full border-t border-[#dbdbdb]" />
 
         <div
-          className="flex gap-2 overflow-x-auto px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex flex-nowrap gap-2 overflow-x-auto px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="radiogroup"
           aria-label="Jour"
         >
           {DAYS.map((item) => {
             const checked = day === item.value
             return (
-              <button
+              <SmoothCorners
                 key={item.value}
+                as="button"
                 type="button"
                 role="radio"
                 aria-checked={checked}
                 onClick={() => setDay(item.value)}
+                corners={corners(10)}
                 className={cn(
-                  "shrink-0 rounded-full border px-3 py-1.5 text-[13px] font-medium",
+                  "flex h-[39px] min-w-[61px] shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
                   checked
-                    ? "border-black bg-black text-white"
-                    : "border-[#dbdbdb] text-[#6b6b6b]",
+                    ? "bg-black text-white"
+                    : "bg-[#F2F2F2] text-[#9D9D9D]",
                 )}
               >
                 {item.label}
-              </button>
+              </SmoothCorners>
             )
           })}
         </div>
 
-        {status ? (
+        {status && !nearbyOpen ? (
           <p
             className={cn(
               "px-5 pt-2 text-sm font-medium",
@@ -226,36 +431,101 @@ export default function App() {
           </p>
         ) : null}
 
-        {emptySearch ? (
-          <p className="px-5 pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
-            Aucun film pour « {query.trim()} ».
+        {nearbyOpen && (geoStatus || status) ? (
+          <p
+            className={cn(
+              "px-5 pt-2 text-sm font-medium",
+              error || geoStatus.includes("Autorise") || geoStatus.includes("Impossible")
+                ? "text-red-700"
+                : "text-[#6b6b6b]",
+            )}
+            role="status"
+          >
+            {geoStatus || status}
           </p>
         ) : null}
 
-        <main className="flex w-full flex-col items-center gap-5 px-0 py-1">
-          {filteredMovies.map((movie) => (
-            <button
-              key={String(movie.id)}
-              type="button"
-              aria-label={movie.title}
-              onClick={() => setSelected(movie)}
-              className="w-[calc(100%-40px)] overflow-hidden rounded-[20px] p-0 transition-transform active:scale-[0.985] md:w-[286px]"
-            >
-              {movie.poster ? (
-                <img
-                  src={movie.poster}
-                  alt={movie.title}
-                  loading="lazy"
-                  className="aspect-[286/358] w-full rounded-[20px] bg-[#ececec] object-cover"
-                />
-              ) : (
-                <div className="grid aspect-[286/358] w-full place-items-center rounded-[20px] bg-[#ececec] px-6 text-center text-lg font-medium leading-tight">
-                  {movie.title}
+        {emptySearch ? (
+          <p className="px-5 pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
+            Aucun résultat pour « {query.trim()} ».
+          </p>
+        ) : null}
+
+        {nearbyEmpty ? (
+          <p className="px-5 pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
+            Aucun cinéma du Pass à moins de {NEARBY_RADIUS_KM} km.
+          </p>
+        ) : null}
+
+        {nearbyOpen ? (
+          <main className="flex w-full flex-col gap-3 px-5 py-1">
+            {nearbyTheaters.map((theater) => (
+              <SmoothCorners
+                key={theater.id}
+                as="section"
+                corners={corners(16)}
+                className="bg-[#F2F2F2] px-4 py-3.5"
+              >
+                <div className="mb-2.5 flex items-center justify-between gap-3">
+                  <h2 className="text-[15px] font-bold leading-tight">
+                    {theater.name}
+                  </h2>
+                  <span className="flex shrink-0 items-center gap-1 text-[13px] font-medium text-black">
+                    <img
+                      src="/assets/location.svg"
+                      alt=""
+                      width={14}
+                      height={14}
+                      className="size-3.5 invert"
+                    />
+                    {formatDistanceKm(theater.distanceKm)}
+                  </span>
                 </div>
-              )}
-            </button>
-          ))}
-        </main>
+                <ul className="flex flex-col gap-1.5">
+                  {theater.movies.map((item) => (
+                    <li key={`${theater.id}-${item.movie.id}`}>
+                      <button
+                        type="button"
+                        className="flex w-full items-baseline justify-between gap-3 text-left text-[15px] font-medium"
+                        onClick={() => setSelected(item.movie)}
+                      >
+                        <span className="min-w-0 truncate">{item.title}</span>
+                        <time className="shrink-0 tabular-nums">{item.time}</time>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </SmoothCorners>
+            ))}
+          </main>
+        ) : (
+          <main className="flex w-full flex-col items-center gap-5 px-0 py-1">
+            {filteredMovies.map((movie) => (
+              <SmoothCorners
+                key={String(movie.id)}
+                as="button"
+                type="button"
+                aria-label={movie.title}
+                onClick={() => setSelected(movie)}
+                corners={corners(20)}
+                className="w-[calc(100%-40px)] overflow-hidden p-0 transition-transform active:scale-[0.985] md:w-[286px]"
+              >
+                {movie.poster ? (
+                  <img
+                    src={movie.poster}
+                    alt={movie.title}
+                    loading="lazy"
+                    className="block w-full bg-[#ececec]"
+                  />
+                ) : (
+                  <div className="grid aspect-[286/358] w-full place-items-center bg-[#ececec] px-6 text-center text-lg font-medium leading-tight">
+                    {movie.title}
+                  </div>
+                )}
+              </SmoothCorners>
+            ))}
+          </main>
+        )}
       </div>
 
       <Dialog
@@ -300,27 +570,31 @@ export default function App() {
                         </>
                       )
                       const className =
-                        "inline-flex items-baseline gap-1.5 rounded-[10px] border border-[#dbdbdb] px-2.5 py-1.5 text-sm"
+                        "inline-flex items-baseline gap-1.5 border border-[#dbdbdb] px-2.5 py-1.5 text-sm"
                       if (session.ticket_url) {
                         return (
-                          <a
+                          <SmoothCorners
                             key={`${theater.id}-${session.time}-${session.version}`}
+                            as="a"
                             href={session.ticket_url}
                             target="_blank"
                             rel="noopener noreferrer"
+                            corners={corners(10)}
                             className={className}
                           >
                             {content}
-                          </a>
+                          </SmoothCorners>
                         )
                       }
                       return (
-                        <span
+                        <SmoothCorners
                           key={`${theater.id}-${session.time}-${session.version}`}
+                          as="span"
+                          corners={corners(10)}
                           className={className}
                         >
                           {content}
-                        </span>
+                        </SmoothCorners>
                       )
                     })}
                   </div>
