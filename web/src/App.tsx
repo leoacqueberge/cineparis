@@ -3,13 +3,14 @@ import { SmoothCorners } from "@lisse/react"
 import { XIcon } from "lucide-react"
 import {
   BRANDS,
-  NEARBY_RADIUS_KM,
+  NEARBY_RADII_KM,
   buildDays,
   distanceKm,
   fetchMovies,
   formatDistanceKm,
   type BrandId,
   type Movie,
+  type NearbyRadiusKm,
   type Session,
 } from "@/lib/api"
 import { THEATER_COORDS } from "@/lib/theaters"
@@ -54,6 +55,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [nearbyOpen, setNearbyOpen] = useState(false)
+  const [radiusKm, setRadiusKm] = useState<NearbyRadiusKm>(1)
   const [userPos, setUserPos] = useState<{ lat: number; lng: number } | null>(
     null,
   )
@@ -164,7 +166,7 @@ export default function App() {
         if (typeof lat !== "number" || typeof lng !== "number") continue
 
         const km = distanceKm(userPos, { lat, lng })
-        if (km > NEARBY_RADIUS_KM) continue
+        if (km > radiusKm) continue
 
         let entry = byTheater.get(theater.id)
         if (!entry) {
@@ -217,7 +219,7 @@ export default function App() {
       })
       .filter((theater) => theater.movies.length > 0)
       .sort((a, b) => a.distanceKm - b.distanceKm)
-  }, [nearbyOpen, userPos, movies, query])
+  }, [nearbyOpen, userPos, movies, query, radiusKm])
 
   const meta = selected
     ? [
@@ -292,7 +294,7 @@ export default function App() {
                     : { width: 1, color: "#000000", opacity: 0.1 }
                 }
                 className={cn(
-                  "p-0 transition-[opacity,transform] active:scale-95",
+                  "flex size-12 shrink-0 items-center justify-center overflow-hidden p-0 leading-none transition-[opacity,transform] active:scale-95",
                   isGlyph ? "bg-black" : "bg-white",
                   active ? "opacity-100" : "opacity-[0.42]",
                 )}
@@ -302,66 +304,64 @@ export default function App() {
                   alt={item.label}
                   width={48}
                   height={48}
-                  className="size-12 object-cover"
+                  className="block size-12 object-cover"
                 />
               </SmoothCorners>
             )
           })}
 
-          <div className="ml-auto flex items-center gap-2.5">
-            <SmoothCorners
-              as="button"
-              type="button"
-              title="Cinémas à proximité"
-              aria-label="Cinémas à proximité (1 km)"
-              aria-pressed={nearbyOpen}
-              onClick={toggleNearby}
-              corners={corners(10)}
-              className={cn(
-                "flex size-12 shrink-0 items-center justify-center bg-black p-0 transition-[opacity,transform] active:scale-95",
-                nearbyOpen ? "opacity-100" : "opacity-[0.42]",
-              )}
-            >
+          <SmoothCorners
+            as="button"
+            type="button"
+            title="Cinémas à proximité"
+            aria-label="Cinémas à proximité"
+            aria-pressed={nearbyOpen}
+            onClick={toggleNearby}
+            corners={corners(10)}
+            className={cn(
+              "ml-auto flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95",
+              nearbyOpen ? "opacity-100" : "opacity-[0.42]",
+            )}
+          >
+            <img
+              src="/assets/location.svg"
+              alt=""
+              width={48}
+              height={48}
+              className="block size-12"
+            />
+          </SmoothCorners>
+
+          <SmoothCorners
+            as="button"
+            type="button"
+            title="Rechercher un film"
+            aria-label="Rechercher un film"
+            aria-pressed={searchOpen}
+            onClick={() => {
+              setSearchOpen((open) => {
+                if (open) setQuery("")
+                return !open
+              })
+            }}
+            corners={corners(10)}
+            className={cn(
+              "flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95",
+              searchOpen ? "opacity-100" : "opacity-[0.42]",
+            )}
+          >
+            {searchOpen ? (
+              <XIcon className="size-5 text-white" strokeWidth={2} />
+            ) : (
               <img
-                src="/assets/location.svg"
+                src="/assets/search.svg"
                 alt=""
                 width={48}
                 height={48}
-                className="size-12"
+                className="block size-12"
               />
-            </SmoothCorners>
-
-            <SmoothCorners
-              as="button"
-              type="button"
-              title="Rechercher un film"
-              aria-label="Rechercher un film"
-              aria-pressed={searchOpen}
-              onClick={() => {
-                setSearchOpen((open) => {
-                  if (open) setQuery("")
-                  return !open
-                })
-              }}
-              corners={corners(10)}
-              className={cn(
-                "flex size-12 shrink-0 items-center justify-center bg-black p-0 transition-[opacity,transform] active:scale-95",
-                searchOpen ? "opacity-100" : "opacity-[0.42]",
-              )}
-            >
-              {searchOpen ? (
-                <XIcon className="size-5 text-white" strokeWidth={2} />
-              ) : (
-                <img
-                  src="/assets/search.svg"
-                  alt=""
-                  width={48}
-                  height={48}
-                  className="size-12"
-                />
-              )}
-            </SmoothCorners>
-          </div>
+            )}
+          </SmoothCorners>
         </nav>
 
         {searchOpen ? (
@@ -393,30 +393,53 @@ export default function App() {
         <div
           className="flex flex-nowrap gap-2 overflow-x-auto px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="radiogroup"
-          aria-label="Jour"
+          aria-label={nearbyOpen ? "Rayon" : "Jour"}
         >
-          {DAYS.map((item) => {
-            const checked = day === item.value
-            return (
-              <SmoothCorners
-                key={item.value}
-                as="button"
-                type="button"
-                role="radio"
-                aria-checked={checked}
-                onClick={() => setDay(item.value)}
-                corners={corners(10)}
-                className={cn(
-                  "flex h-[39px] min-w-[61px] shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
-                  checked
-                    ? "bg-black text-white"
-                    : "bg-[#F2F2F2] text-[#9D9D9D]",
-                )}
-              >
-                {item.label}
-              </SmoothCorners>
-            )
-          })}
+          {nearbyOpen
+            ? NEARBY_RADII_KM.map((km) => {
+                const checked = radiusKm === km
+                return (
+                  <SmoothCorners
+                    key={km}
+                    as="button"
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    onClick={() => setRadiusKm(km)}
+                    corners={corners(10)}
+                    className={cn(
+                      "flex h-[39px] min-w-[61px] shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
+                      checked
+                        ? "bg-black text-white"
+                        : "bg-[#F2F2F2] text-[#9D9D9D]",
+                    )}
+                  >
+                    {km} km
+                  </SmoothCorners>
+                )
+              })
+            : DAYS.map((item) => {
+                const checked = day === item.value
+                return (
+                  <SmoothCorners
+                    key={item.value}
+                    as="button"
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    onClick={() => setDay(item.value)}
+                    corners={corners(10)}
+                    className={cn(
+                      "flex h-[39px] min-w-[61px] shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
+                      checked
+                        ? "bg-black text-white"
+                        : "bg-[#F2F2F2] text-[#9D9D9D]",
+                    )}
+                  >
+                    {item.label}
+                  </SmoothCorners>
+                )
+              })}
         </div>
 
         {status && !nearbyOpen ? (
@@ -453,7 +476,7 @@ export default function App() {
 
         {nearbyEmpty ? (
           <p className="px-5 pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
-            Aucun cinéma du Pass à moins de {NEARBY_RADIUS_KM} km.
+            Aucun cinéma du Pass à moins de {radiusKm} km.
           </p>
         ) : null}
 
@@ -499,7 +522,7 @@ export default function App() {
             ))}
           </main>
         ) : (
-          <main className="flex w-full flex-col items-center gap-5 px-0 py-1">
+          <main className="grid w-full grid-cols-3 gap-2 px-5 py-1">
             {filteredMovies.map((movie) => (
               <SmoothCorners
                 key={String(movie.id)}
@@ -507,8 +530,8 @@ export default function App() {
                 type="button"
                 aria-label={movie.title}
                 onClick={() => setSelected(movie)}
-                corners={corners(20)}
-                className="w-[calc(100%-40px)] overflow-hidden p-0 transition-transform active:scale-[0.985] md:w-[286px]"
+                corners={corners(12)}
+                className="w-full overflow-hidden p-0 transition-transform active:scale-[0.985]"
               >
                 {movie.poster ? (
                   <img
@@ -518,7 +541,7 @@ export default function App() {
                     className="block w-full bg-[#ececec]"
                   />
                 ) : (
-                  <div className="grid aspect-[286/358] w-full place-items-center bg-[#ececec] px-6 text-center text-lg font-medium leading-tight">
+                  <div className="grid aspect-[286/358] w-full place-items-center bg-[#ececec] px-1.5 text-center text-[11px] font-medium leading-tight">
                     {movie.title}
                   </div>
                 )}

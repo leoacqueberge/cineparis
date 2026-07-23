@@ -63,7 +63,8 @@ export const BRANDS: Brand[] = [
   { id: "dulac", label: "Dulac Cinémas", icon: "/assets/dulac.png" },
 ]
 
-export const NEARBY_RADIUS_KM = 1
+export const NEARBY_RADII_KM = [1, 3, 5] as const
+export type NearbyRadiusKm = (typeof NEARBY_RADII_KM)[number]
 
 export function buildDays(count = 7) {
   const weekdays = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
