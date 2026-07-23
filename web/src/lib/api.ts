@@ -66,9 +66,11 @@ export function buildDays(count = 7) {
   })
 }
 
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, "") ?? ""
+
 export async function fetchMovies(brand: BrandId, day: string): Promise<MoviesResponse> {
   const params = new URLSearchParams({ brand, day })
-  const response = await fetch(`/api/movies?${params}`)
+  const response = await fetch(`${API_BASE}/api/movies?${params}`)
   const payload = await response.json()
   if (!response.ok) {
     throw new Error(payload.detail || "Erreur serveur")

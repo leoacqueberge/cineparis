@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from pathlib import Path
 
+import os
+
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -12,13 +14,21 @@ from theaters import BRANDS, THEATERS, get_theater
 
 ROOT = Path(__file__).parent
 
+_DEFAULT_ORIGINS = [
+    "http://127.0.0.1:5173",
+    "http://localhost:5173",
+]
+_EXTRA_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
 app = FastAPI(title="CineParis", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:5173",
-        "http://localhost:5173",
-    ],
+    allow_origins=[*_DEFAULT_ORIGINS, *_EXTRA_ORIGINS],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
