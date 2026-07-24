@@ -4,10 +4,12 @@ import { XIcon } from "lucide-react"
 import {
   BRANDS,
   NEARBY_RADII_KM,
+  WEEK_FILTER,
   buildDays,
   distanceKm,
   fetchMovies,
   formatDistanceKm,
+  formatSessionDay,
   type BrandId,
   type Movie,
   type NearbyRadiusKm,
@@ -25,12 +27,26 @@ import { LinkButton } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 const DAYS = buildDays()
+const DEFAULT_DAY =
+  DAYS.find((item) => item.value !== WEEK_FILTER)?.value ?? DAYS[0].value
 
 type NearbyTheater = {
   id: string
   name: string
   distanceKm: number
   movies: { title: string; time: string; sessions: Session[]; movie: Movie }[]
+}
+
+function earliestSession(sessions: Session[]) {
+  return [...sessions].sort((a, b) => {
+    const dayCmp = (a.date || "").localeCompare(b.date || "")
+    return dayCmp || a.time.localeCompare(b.time)
+  })[0]
+}
+
+function formatSessionLabel(session: Session) {
+  if (!session.date) return session.time
+  return `${formatSessionDay(session.date)} · ${session.time}`
 }
 
 function normalize(value: string) {
@@ -41,13 +57,9 @@ function normalize(value: string) {
     .trim()
 }
 
-function earliestTime(sessions: Session[]) {
-  return [...sessions].map((s) => s.time).sort()[0] ?? ""
-}
-
 export default function App() {
   const [brand, setBrand] = useState<BrandId>("all")
-  const [day, setDay] = useState(DAYS[0].value)
+  const [day, setDay] = useState(DEFAULT_DAY)
   const [movies, setMovies] = useState<Movie[]>([])
   const [status, setStatus] = useState("Chargement…")
   const [error, setError] = useState(false)
@@ -75,7 +87,9 @@ export default function App() {
         setStatus(
           payload.movies.length
             ? ""
-            : "Aucun film trouvé pour ce groupe aujourd’hui.",
+            : day === WEEK_FILTER
+              ? "Aucun film trouvé pour ce groupe cette semaine."
+              : "Aucun film trouvé pour ce groupe aujourd’hui.",
         )
       })
       .catch((err: Error) => {
@@ -93,6 +107,18 @@ export default function App() {
     if (!searchOpen) return
     searchRef.current?.focus()
   }, [searchOpen])
+
+  function resetHome() {
+    setBrand("all")
+    setDay(DEFAULT_DAY)
+    setSelected(null)
+    setSearchOpen(false)
+    setQuery("")
+    setNearbyOpen(false)
+    setRadiusKm(1)
+    setUserPos(null)
+    setGeoStatus("")
+  }
 
   function enableNearby() {
     if (!navigator.geolocation) {
@@ -196,12 +222,15 @@ export default function App() {
     const q = normalize(query)
     return [...byTheater.values()]
       .map((theater) => {
-        let list = [...theater.movies.values()].map((item) => ({
-          title: item.title,
-          time: earliestTime(item.sessions),
-          sessions: item.sessions,
-          movie: item.movie,
-        }))
+        let list = [...theater.movies.values()].map((item) => {
+          const next = earliestSession(item.sessions)
+          return {
+            title: item.title,
+            time: next ? formatSessionLabel(next) : "",
+            sessions: item.sessions,
+            movie: item.movie,
+          }
+        })
         if (q) {
           list = list.filter(
             (item) =>
@@ -209,7 +238,13 @@ export default function App() {
               normalize(theater.name).includes(q),
           )
         }
-        list.sort((a, b) => a.time.localeCompare(b.time) || a.title.localeCompare(b.title))
+        list.sort((a, b) => {
+          const aSession = earliestSession(a.sessions)
+          const bSession = earliestSession(b.sessions)
+          const aKey = `${aSession?.date || ""}${aSession?.time || ""}`
+          const bKey = `${bSession?.date || ""}${bSession?.time || ""}`
+          return aKey.localeCompare(bKey) || a.title.localeCompare(b.title)
+        })
         return {
           id: theater.id,
           name: theater.name,
@@ -248,124 +283,155 @@ export default function App() {
 
   return (
     <div className="flex min-h-dvh justify-center bg-white text-black">
-      <div className="flex w-full min-h-dvh flex-col gap-[15px] py-3 pb-12 md:w-[402px] md:border-x md:border-[#dbdbdb]">
-        <header className="flex h-9 items-center gap-2.5 px-5">
-          <SmoothCorners
-            as="img"
-            corners={corners(18)}
-            src="/assets/logo.png"
-            alt="CineParis"
-            width={36}
-            height={36}
-            className="size-9 shrink-0 animate-[spin_12s_linear_infinite] bg-black object-cover motion-reduce:animate-none"
-          />
-          <span
-            aria-hidden
-            className="h-[30px] w-0 shrink-0 border-l border-[#dbdbdb] rotate-[15deg]"
-          />
-          <h1 className="text-2xl font-bold leading-8 tracking-normal">
-            Pass UGC
-          </h1>
+      <div className="mx-auto flex w-full min-h-dvh max-w-[1200px] flex-col gap-[15px] px-5 py-3 pb-12 md:px-8">
+        <header className="flex h-9 items-center md:hidden">
+          <button
+            type="button"
+            onClick={resetHome}
+            className="flex cursor-pointer items-center gap-2.5 text-left"
+            aria-label="CineParis — revenir à l’accueil"
+          >
+            <SmoothCorners
+              as="img"
+              corners={corners(18)}
+              src="/assets/logo.png"
+              alt=""
+              width={36}
+              height={36}
+              className="size-9 shrink-0 animate-[spin_12s_linear_infinite] bg-black object-cover motion-reduce:animate-none"
+              aria-hidden
+            />
+            <h1 className="text-2xl font-bold leading-8 tracking-normal">
+              CineParis
+            </h1>
+          </button>
         </header>
 
-        <div className="h-0 w-full border-t border-[#dbdbdb]" />
+        <div className="h-0 w-full border-t border-[#dbdbdb] md:hidden" />
 
-        <nav
-          className="flex h-12 items-center gap-2.5 px-5"
-          aria-label="Groupes de cinémas"
-        >
-          {BRANDS.map((item) => {
-            const active = brand === item.id
-            const isGlyph = item.id === "all"
-            return (
+        <div className="flex items-center md:justify-between md:gap-6">
+          <header className="hidden md:block">
+            <button
+              type="button"
+              onClick={resetHome}
+              className="flex cursor-pointer items-center gap-2.5 text-left"
+              aria-label="CineParis — revenir à l’accueil"
+            >
               <SmoothCorners
-                key={item.id}
+                as="img"
+                corners={corners(18)}
+                src="/assets/logo.png"
+                alt=""
+                width={36}
+                height={36}
+                className="size-9 shrink-0 animate-[spin_12s_linear_infinite] bg-black object-cover motion-reduce:animate-none"
+                aria-hidden
+              />
+              <h1 className="text-2xl font-bold tracking-normal">CineParis</h1>
+            </button>
+          </header>
+
+          <nav
+            className="flex h-12 w-full items-center justify-between gap-2 md:h-10 md:w-auto md:justify-start md:gap-2"
+            aria-label="Groupes de cinémas"
+          >
+            <div className="flex items-center gap-2 md:gap-2">
+              {BRANDS.map((item) => {
+                const active = brand === item.id
+                const isGlyph = item.id === "all"
+                return (
+                  <SmoothCorners
+                    key={item.id}
+                    as="button"
+                    type="button"
+                    title={item.label}
+                    aria-pressed={active}
+                    onClick={() => {
+                      setBrand(item.id)
+                    }}
+                    corners={corners(10)}
+                    innerBorder={
+                      isGlyph
+                        ? undefined
+                        : { width: 1, color: "#000000", opacity: 0.1 }
+                    }
+                    className={cn(
+                      "flex size-12 shrink-0 items-center justify-center overflow-hidden p-0 leading-none transition-[opacity,transform] active:scale-95 md:size-10",
+                      isGlyph ? "bg-black" : "bg-white",
+                      active ? "opacity-100" : "opacity-[0.42]",
+                    )}
+                  >
+                    <img
+                      src={item.icon}
+                      alt={item.label}
+                      width={48}
+                      height={48}
+                      className="block size-12 object-cover md:size-10"
+                    />
+                  </SmoothCorners>
+                )
+              })}
+            </div>
+
+            <div className="flex items-center gap-2 md:ml-2">
+              <SmoothCorners
                 as="button"
                 type="button"
-                title={item.label}
-                aria-pressed={active}
-                onClick={() => {
-                  setBrand(item.id)
-                }}
+                title="Cinémas à proximité"
+                aria-label="Cinémas à proximité"
+                aria-pressed={nearbyOpen}
+                onClick={toggleNearby}
                 corners={corners(10)}
-                innerBorder={
-                  isGlyph
-                    ? undefined
-                    : { width: 1, color: "#000000", opacity: 0.1 }
-                }
                 className={cn(
-                  "flex size-12 shrink-0 items-center justify-center overflow-hidden p-0 leading-none transition-[opacity,transform] active:scale-95",
-                  isGlyph ? "bg-black" : "bg-white",
-                  active ? "opacity-100" : "opacity-[0.42]",
+                  "flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95 md:size-10",
+                  nearbyOpen ? "opacity-100" : "opacity-[0.42]",
                 )}
               >
                 <img
-                  src={item.icon}
-                  alt={item.label}
+                  src="/assets/location.svg"
+                  alt=""
                   width={48}
                   height={48}
-                  className="block size-12 object-cover"
+                  className="block size-12 md:size-10"
                 />
               </SmoothCorners>
-            )
-          })}
 
-          <SmoothCorners
-            as="button"
-            type="button"
-            title="Cinémas à proximité"
-            aria-label="Cinémas à proximité"
-            aria-pressed={nearbyOpen}
-            onClick={toggleNearby}
-            corners={corners(10)}
-            className={cn(
-              "ml-auto flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95",
-              nearbyOpen ? "opacity-100" : "opacity-[0.42]",
-            )}
-          >
-            <img
-              src="/assets/location.svg"
-              alt=""
-              width={48}
-              height={48}
-              className="block size-12"
-            />
-          </SmoothCorners>
-
-          <SmoothCorners
-            as="button"
-            type="button"
-            title="Rechercher un film"
-            aria-label="Rechercher un film"
-            aria-pressed={searchOpen}
-            onClick={() => {
-              setSearchOpen((open) => {
-                if (open) setQuery("")
-                return !open
-              })
-            }}
-            corners={corners(10)}
-            className={cn(
-              "flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95",
-              searchOpen ? "opacity-100" : "opacity-[0.42]",
-            )}
-          >
-            {searchOpen ? (
-              <XIcon className="size-5 text-white" strokeWidth={2} />
-            ) : (
-              <img
-                src="/assets/search.svg"
-                alt=""
-                width={48}
-                height={48}
-                className="block size-12"
-              />
-            )}
-          </SmoothCorners>
-        </nav>
+              <SmoothCorners
+                as="button"
+                type="button"
+                title="Rechercher un film"
+                aria-label="Rechercher un film"
+                aria-pressed={searchOpen}
+                onClick={() => {
+                  setSearchOpen((open) => {
+                    if (open) setQuery("")
+                    return !open
+                  })
+                }}
+                corners={corners(10)}
+                className={cn(
+                  "flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95 md:size-10",
+                  searchOpen ? "opacity-100" : "opacity-[0.42]",
+                )}
+              >
+                {searchOpen ? (
+                  <XIcon className="size-5 text-white" strokeWidth={2} />
+                ) : (
+                  <img
+                    src="/assets/search.svg"
+                    alt=""
+                    width={48}
+                    height={48}
+                    className="block size-12 md:size-10"
+                  />
+                )}
+              </SmoothCorners>
+            </div>
+          </nav>
+        </div>
 
         {searchOpen ? (
-          <div className="px-5">
+          <div>
             <label className="sr-only" htmlFor="movie-search">
               Rechercher un film
             </label>
@@ -391,7 +457,7 @@ export default function App() {
         <div className="h-0 w-full border-t border-[#dbdbdb]" />
 
         <div
-          className="flex flex-nowrap gap-2 overflow-x-auto px-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="flex flex-nowrap gap-2 overflow-x-auto [scrollbar-width:none] md:flex-wrap md:overflow-visible [&::-webkit-scrollbar]:hidden"
           role="radiogroup"
           aria-label={nearbyOpen ? "Rayon" : "Jour"}
         >
@@ -408,7 +474,7 @@ export default function App() {
                     onClick={() => setRadiusKm(km)}
                     corners={corners(10)}
                     className={cn(
-                      "flex h-[39px] min-w-[61px] shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
+                      "flex h-[39px] min-w-[61px] shrink-0 cursor-pointer items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
                       checked
                         ? "bg-black text-white"
                         : "bg-[#F2F2F2] text-[#9D9D9D]",
@@ -430,7 +496,7 @@ export default function App() {
                     onClick={() => setDay(item.value)}
                     corners={corners(10)}
                     className={cn(
-                      "flex h-[39px] min-w-[61px] shrink-0 items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
+                      "flex h-[39px] min-w-[61px] shrink-0 cursor-pointer items-center justify-center gap-2.5 whitespace-nowrap rounded-[10px] p-2.5 text-[13px] font-medium",
                       checked
                         ? "bg-black text-white"
                         : "bg-[#F2F2F2] text-[#9D9D9D]",
@@ -445,7 +511,7 @@ export default function App() {
         {status && !nearbyOpen ? (
           <p
             className={cn(
-              "px-5 pt-2 text-sm font-medium",
+              "pt-2 text-sm font-medium",
               error ? "text-red-700" : "text-[#6b6b6b]",
             )}
             role="status"
@@ -457,7 +523,7 @@ export default function App() {
         {nearbyOpen && (geoStatus || status) ? (
           <p
             className={cn(
-              "px-5 pt-2 text-sm font-medium",
+              "pt-2 text-sm font-medium",
               error || geoStatus.includes("Autorise") || geoStatus.includes("Impossible")
                 ? "text-red-700"
                 : "text-[#6b6b6b]",
@@ -469,19 +535,19 @@ export default function App() {
         ) : null}
 
         {emptySearch ? (
-          <p className="px-5 pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
+          <p className="pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
             Aucun résultat pour « {query.trim()} ».
           </p>
         ) : null}
 
         {nearbyEmpty ? (
-          <p className="px-5 pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
+          <p className="pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
             Aucun cinéma du Pass à moins de {radiusKm} km.
           </p>
         ) : null}
 
         {nearbyOpen ? (
-          <main className="flex w-full flex-col gap-3 px-5 py-1">
+          <main className="flex w-full flex-col gap-3 py-1 md:grid md:grid-cols-2 md:gap-3 lg:grid-cols-3">
             {nearbyTheaters.map((theater) => (
               <SmoothCorners
                 key={theater.id}
@@ -522,7 +588,7 @@ export default function App() {
             ))}
           </main>
         ) : (
-          <main className="grid w-full grid-cols-3 gap-2 px-5 py-1">
+          <main className="grid w-full grid-cols-3 gap-2 py-1 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6">
             {filteredMovies.map((movie) => (
               <SmoothCorners
                 key={String(movie.id)}
@@ -531,7 +597,7 @@ export default function App() {
                 aria-label={movie.title}
                 onClick={() => setSelected(movie)}
                 corners={corners(12)}
-                className="w-full overflow-hidden p-0 transition-transform active:scale-[0.985]"
+                className="w-full cursor-pointer overflow-hidden p-0 transition-transform active:scale-[0.985]"
               >
                 {movie.poster ? (
                   <img
@@ -556,7 +622,7 @@ export default function App() {
         onOpenChange={(open) => {
           if (!open) setSelected(null)
         }}
-        className="max-h-[min(80dvh,720px)] w-full max-w-[calc(100%-1.5rem)] overflow-y-auto sm:max-w-md md:max-w-[402px]"
+        className="max-h-[min(80dvh,720px)] w-full max-w-[calc(100%-1.5rem)] overflow-y-auto sm:max-w-md md:max-w-[480px]"
       >
         {selected ? (
           <>
@@ -572,57 +638,84 @@ export default function App() {
             </DialogHeader>
 
             <div className="mt-2">
-              {selected.theaters.map((theater) => (
-                <section
-                  key={theater.id}
-                  className="border-t border-[#dbdbdb] py-3.5"
-                >
-                  <h3 className="mb-2 text-[15px] font-semibold">
-                    {theater.name}
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {theater.sessions.map((session) => {
-                      const content = (
-                        <>
-                          <time className="font-semibold tabular-nums">
-                            {session.time}
-                          </time>
-                          <span className="text-xs font-medium text-[#6b6b6b]">
-                            {session.version}
-                          </span>
-                        </>
-                      )
-                      const className =
-                        "inline-flex items-baseline gap-1.5 border border-[#dbdbdb] px-2.5 py-1.5 text-sm"
-                      if (session.ticket_url) {
-                        return (
-                          <SmoothCorners
-                            key={`${theater.id}-${session.time}-${session.version}`}
-                            as="a"
-                            href={session.ticket_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            corners={corners(10)}
-                            className={className}
-                          >
-                            {content}
-                          </SmoothCorners>
-                        )
-                      }
-                      return (
-                        <SmoothCorners
-                          key={`${theater.id}-${session.time}-${session.version}`}
-                          as="span"
-                          corners={corners(10)}
-                          className={className}
-                        >
-                          {content}
-                        </SmoothCorners>
-                      )
-                    })}
-                  </div>
-                </section>
-              ))}
+              {selected.theaters.map((theater) => {
+                const hasDates = theater.sessions.some((session) => session.date)
+                const groups = hasDates
+                  ? theater.sessions.reduce<
+                      { date: string; sessions: Session[] }[]
+                    >((acc, session) => {
+                      const date = session.date || ""
+                      const group = acc.find((item) => item.date === date)
+                      if (group) group.sessions.push(session)
+                      else acc.push({ date, sessions: [session] })
+                      return acc
+                    }, [])
+                  : [{ date: "", sessions: theater.sessions }]
+
+                return (
+                  <section
+                    key={theater.id}
+                    className="border-t border-[#dbdbdb] py-3.5"
+                  >
+                    <h3 className="mb-2 text-[15px] font-semibold">
+                      {theater.name}
+                    </h3>
+                    <div className="flex flex-col gap-2.5">
+                      {groups.map((group) => (
+                        <div key={group.date || "day"} className="flex flex-col gap-1.5">
+                          {group.date ? (
+                            <p className="text-[13px] font-medium text-[#6b6b6b]">
+                              {formatSessionDay(group.date)}
+                            </p>
+                          ) : null}
+                          <div className="flex flex-wrap gap-2">
+                            {group.sessions.map((session) => {
+                              const content = (
+                                <>
+                                  <time className="font-semibold tabular-nums">
+                                    {session.time}
+                                  </time>
+                                  <span className="text-xs font-medium text-[#6b6b6b]">
+                                    {session.version}
+                                  </span>
+                                </>
+                              )
+                              const className =
+                                "inline-flex items-baseline gap-1.5 border border-[#dbdbdb] px-2.5 py-1.5 text-sm"
+                              const key = `${theater.id}-${session.date || ""}-${session.time}-${session.version}`
+                              if (session.ticket_url) {
+                                return (
+                                  <SmoothCorners
+                                    key={key}
+                                    as="a"
+                                    href={session.ticket_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    corners={corners(10)}
+                                    className={className}
+                                  >
+                                    {content}
+                                  </SmoothCorners>
+                                )
+                              }
+                              return (
+                                <SmoothCorners
+                                  key={key}
+                                  as="span"
+                                  corners={corners(10)}
+                                  className={className}
+                                >
+                                  {content}
+                                </SmoothCorners>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )
+              })}
             </div>
 
             {selected.url ? (

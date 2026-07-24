@@ -8,23 +8,24 @@ Séances AlloCiné pour le **Pass UGC Illimité** à Paris.
 
 ## Lancer en local
 
+Une seule commande (API + front) :
+
 ```bash
-# API
+# une fois : dépendances
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env   # remplir SUPABASE_* si tu veux la DB
-uvicorn main:app --reload --port 8001
-```
-
-```bash
-# Front
-cd web
 npm install
+npm install --prefix web
+
+# ensuite, à chaque fois :
 npm run dev
 ```
 
 Ouvre [http://127.0.0.1:5173](http://127.0.0.1:5173)
+
+Pour ne lancer que le front ou que l’API : `npm run dev:web-only` / `npm run dev:api`.
 
 ## Supabase (recommandé)
 
