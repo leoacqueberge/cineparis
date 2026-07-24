@@ -1,19 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import { SmoothCorners } from "@lisse/react"
 import { XIcon } from "lucide-react"
 import {
   BRANDS,
+  LETTERBOXD_USERNAME_KEY,
   NEARBY_RADII_KM,
   WEEK_FILTER,
   buildDays,
   distanceKm,
   fetchMovies,
+  fetchWatchlist,
+  filterMoviesByWatchlist,
   formatDistanceKm,
   formatSessionDay,
   type BrandId,
   type Movie,
   type NearbyRadiusKm,
   type Session,
+  type WatchlistFilm,
 } from "@/lib/api"
 import { THEATER_COORDS } from "@/lib/theaters"
 import { corners } from "@/lib/squircle"
@@ -72,7 +76,23 @@ export default function App() {
     null,
   )
   const [geoStatus, setGeoStatus] = useState("")
+  const [watchlistOpen, setWatchlistOpen] = useState(false)
+  const [letterboxdUsername, setLetterboxdUsername] = useState(() => {
+    try {
+      return localStorage.getItem(LETTERBOXD_USERNAME_KEY) || ""
+    } catch {
+      return ""
+    }
+  })
+  const [watchlistFilms, setWatchlistFilms] = useState<WatchlistFilm[] | null>(
+    null,
+  )
+  const [watchlistUsername, setWatchlistUsername] = useState("")
+  const [watchlistStatus, setWatchlistStatus] = useState("")
+  const [watchlistError, setWatchlistError] = useState(false)
+  const [watchlistLoading, setWatchlistLoading] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const watchlistRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -108,6 +128,11 @@ export default function App() {
     searchRef.current?.focus()
   }, [searchOpen])
 
+  useEffect(() => {
+    if (!watchlistOpen) return
+    watchlistRef.current?.focus()
+  }, [watchlistOpen])
+
   function resetHome() {
     setBrand("all")
     setDay(DEFAULT_DAY)
@@ -118,6 +143,58 @@ export default function App() {
     setRadiusKm(1)
     setUserPos(null)
     setGeoStatus("")
+    setWatchlistOpen(false)
+    setWatchlistFilms(null)
+    setWatchlistUsername("")
+    setWatchlistStatus("")
+    setWatchlistError(false)
+    setWatchlistLoading(false)
+  }
+
+  function clearWatchlistFilter() {
+    setWatchlistFilms(null)
+    setWatchlistUsername("")
+    setWatchlistStatus("")
+    setWatchlistError(false)
+  }
+
+  async function applyWatchlist(event?: FormEvent) {
+    event?.preventDefault()
+    const username = letterboxdUsername.trim().replace(/^@/, "")
+    if (!username) {
+      setWatchlistError(true)
+      setWatchlistStatus("Entre un username Letterboxd.")
+      return
+    }
+
+    setWatchlistLoading(true)
+    setWatchlistError(false)
+    setWatchlistStatus("Chargement de la watchlist…")
+    try {
+      localStorage.setItem(LETTERBOXD_USERNAME_KEY, username)
+    } catch {
+      /* ignore */
+    }
+
+    try {
+      const payload = await fetchWatchlist(username)
+      setWatchlistFilms(payload.films)
+      setWatchlistUsername(payload.username)
+      setLetterboxdUsername(payload.username)
+      setWatchlistStatus("")
+      setWatchlistOpen(false)
+    } catch (err) {
+      setWatchlistFilms(null)
+      setWatchlistUsername("")
+      setWatchlistError(true)
+      setWatchlistStatus(
+        err instanceof Error
+          ? err.message
+          : "Impossible de charger la watchlist.",
+      )
+    } finally {
+      setWatchlistLoading(false)
+    }
   }
 
   function enableNearby() {
@@ -156,15 +233,20 @@ export default function App() {
     enableNearby()
   }
 
+  const watchlistActive = Boolean(watchlistFilms?.length)
+
   const filteredMovies = useMemo(() => {
+    const base = watchlistFilms
+      ? filterMoviesByWatchlist(movies, watchlistFilms)
+      : movies
     const q = normalize(query)
-    if (!q) return movies
-    return movies.filter((movie) => {
+    if (!q) return base
+    return base.filter((movie) => {
       const title = normalize(movie.title)
       const original = normalize(movie.original_title || "")
       return title.includes(q) || original.includes(q)
     })
-  }, [movies, query])
+  }, [movies, query, watchlistFilms])
 
   const nearbyTheaters = useMemo((): NearbyTheater[] => {
     if (!nearbyOpen || !userPos) return []
@@ -182,7 +264,11 @@ export default function App() {
       }
     >()
 
-    for (const movie of movies) {
+    const pool = watchlistFilms
+      ? filterMoviesByWatchlist(movies, watchlistFilms)
+      : movies
+
+    for (const movie of pool) {
       for (const theater of movie.theaters) {
         const catalog = THEATER_COORDS[theater.id]
         const lat =
@@ -254,7 +340,7 @@ export default function App() {
       })
       .filter((theater) => theater.movies.length > 0)
       .sort((a, b) => a.distanceKm - b.distanceKm)
-  }, [nearbyOpen, userPos, movies, query, radiusKm])
+  }, [nearbyOpen, userPos, movies, query, radiusKm, watchlistFilms])
 
   const meta = selected
     ? [
@@ -272,6 +358,14 @@ export default function App() {
     query.trim() &&
     (nearbyOpen ? nearbyTheaters.length === 0 : filteredMovies.length === 0)
 
+  const emptyWatchlist =
+    !error &&
+    !status &&
+    !query.trim() &&
+    watchlistActive &&
+    !nearbyOpen &&
+    filteredMovies.length === 0
+
   const nearbyEmpty =
     nearbyOpen &&
     !geoStatus &&
@@ -282,8 +376,8 @@ export default function App() {
     nearbyTheaters.length === 0
 
   return (
-    <div className="flex min-h-dvh justify-center bg-white text-black">
-      <div className="mx-auto flex w-full min-h-dvh max-w-[1200px] flex-col gap-[15px] px-5 py-3 pb-12 md:px-8">
+    <div className="min-h-dvh w-full bg-white text-black">
+      <div className="mx-auto flex w-full min-h-dvh max-w-[1200px] min-w-0 flex-col gap-[15px] px-3 py-3 pb-12 sm:px-5 md:px-8">
         <header className="flex h-9 items-center md:hidden">
           <button
             type="button"
@@ -307,7 +401,7 @@ export default function App() {
           </button>
         </header>
 
-        <div className="h-0 w-full border-t border-[#dbdbdb] md:hidden" />
+        <div className="-mx-3 h-0 w-[calc(100%+1.5rem)] border-t border-[#dbdbdb] sm:-mx-5 sm:w-[calc(100%+2.5rem)] md:hidden" />
 
         <div className="flex items-center md:justify-between md:gap-6">
           <header className="hidden md:block">
@@ -332,10 +426,10 @@ export default function App() {
           </header>
 
           <nav
-            className="flex h-12 w-full items-center justify-between gap-2 md:h-10 md:w-auto md:justify-start md:gap-2"
+            className="flex h-10 w-full min-w-0 items-center justify-between gap-1.5 sm:gap-2 md:h-10 md:w-auto md:justify-start"
             aria-label="Groupes de cinémas"
           >
-            <div className="flex items-center gap-2 md:gap-2">
+            <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
               {BRANDS.map((item) => {
                 const active = brand === item.id
                 const isGlyph = item.id === "all"
@@ -356,7 +450,7 @@ export default function App() {
                         : { width: 1, color: "#000000", opacity: 0.1 }
                     }
                     className={cn(
-                      "flex size-12 shrink-0 items-center justify-center overflow-hidden p-0 leading-none transition-[opacity,transform] active:scale-95 md:size-10",
+                      "flex size-10 shrink-0 items-center justify-center overflow-hidden p-0 leading-none transition-[opacity,transform] active:scale-95",
                       isGlyph ? "bg-black" : "bg-white",
                       active ? "opacity-100" : "opacity-[0.42]",
                     )}
@@ -364,16 +458,43 @@ export default function App() {
                     <img
                       src={item.icon}
                       alt={item.label}
-                      width={48}
-                      height={48}
-                      className="block size-12 object-cover md:size-10"
+                      width={40}
+                      height={40}
+                      className="block size-10 object-cover"
                     />
                   </SmoothCorners>
                 )
               })}
             </div>
 
-            <div className="flex items-center gap-2 md:ml-2">
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2 md:ml-2">
+              <SmoothCorners
+                as="button"
+                type="button"
+                title="Watchlist Letterboxd"
+                aria-label="Watchlist Letterboxd"
+                aria-pressed={watchlistOpen || watchlistActive}
+                onClick={() => {
+                  setWatchlistOpen((open) => !open)
+                  setSearchOpen(false)
+                }}
+                corners={corners(10)}
+                className={cn(
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95",
+                  watchlistOpen || watchlistActive
+                    ? "opacity-100"
+                    : "opacity-[0.42]",
+                )}
+              >
+                <img
+                  src="/assets/bookmark.svg"
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="block size-10"
+                />
+              </SmoothCorners>
+
               <SmoothCorners
                 as="button"
                 type="button"
@@ -383,16 +504,16 @@ export default function App() {
                 onClick={toggleNearby}
                 corners={corners(10)}
                 className={cn(
-                  "flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95 md:size-10",
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95",
                   nearbyOpen ? "opacity-100" : "opacity-[0.42]",
                 )}
               >
                 <img
                   src="/assets/location.svg"
                   alt=""
-                  width={48}
-                  height={48}
-                  className="block size-12 md:size-10"
+                  width={40}
+                  height={40}
+                  className="block size-10"
                 />
               </SmoothCorners>
 
@@ -407,10 +528,11 @@ export default function App() {
                     if (open) setQuery("")
                     return !open
                   })
+                  setWatchlistOpen(false)
                 }}
                 corners={corners(10)}
                 className={cn(
-                  "flex size-12 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95 md:size-10",
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden bg-black p-0 leading-none transition-[opacity,transform] active:scale-95",
                   searchOpen ? "opacity-100" : "opacity-[0.42]",
                 )}
               >
@@ -420,15 +542,61 @@ export default function App() {
                   <img
                     src="/assets/search.svg"
                     alt=""
-                    width={48}
-                    height={48}
-                    className="block size-12 md:size-10"
+                    width={40}
+                    height={40}
+                    className="block size-10"
                   />
                 )}
               </SmoothCorners>
             </div>
           </nav>
         </div>
+
+        {watchlistOpen ? (
+          <form
+            className="flex flex-col gap-2 sm:flex-row sm:items-center"
+            onSubmit={applyWatchlist}
+          >
+            <label className="sr-only" htmlFor="letterboxd-username">
+              Username Letterboxd
+            </label>
+            <SmoothCorners
+              as="input"
+              id="letterboxd-username"
+              ref={watchlistRef}
+              type="text"
+              value={letterboxdUsername}
+              onChange={(event) => setLetterboxdUsername(event.target.value)}
+              placeholder="Username Letterboxd"
+              autoComplete="username"
+              spellCheck={false}
+              corners={corners(10)}
+              className="h-11 w-full border-0 bg-[#f5f5f5] px-3.5 text-base font-medium outline-none ring-0 placeholder:text-[#6b6b6b] focus-visible:shadow-[inset_0_0_0_1px_rgba(0,0,0,0.2)] sm:flex-1"
+            />
+            <div className="flex gap-2">
+              <SmoothCorners
+                as="button"
+                type="submit"
+                disabled={watchlistLoading}
+                corners={corners(10)}
+                className="h-11 shrink-0 bg-black px-4 text-[13px] font-medium text-white disabled:opacity-50"
+              >
+                {watchlistLoading ? "…" : "Voir"}
+              </SmoothCorners>
+              {watchlistActive ? (
+                <SmoothCorners
+                  as="button"
+                  type="button"
+                  onClick={clearWatchlistFilter}
+                  corners={corners(10)}
+                  className="h-11 shrink-0 bg-[#F2F2F2] px-4 text-[13px] font-medium text-black"
+                >
+                  Effacer
+                </SmoothCorners>
+              ) : null}
+            </div>
+          </form>
+        ) : null}
 
         {searchOpen ? (
           <div>
@@ -454,7 +622,7 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="h-0 w-full border-t border-[#dbdbdb]" />
+        <div className="-mx-3 h-0 w-[calc(100%+1.5rem)] border-t border-[#dbdbdb] sm:-mx-5 sm:w-[calc(100%+2.5rem)] md:mx-0 md:w-full" />
 
         <div
           className="flex flex-nowrap gap-2 overflow-x-auto [scrollbar-width:none] md:flex-wrap md:overflow-visible [&::-webkit-scrollbar]:hidden"
@@ -520,6 +688,34 @@ export default function App() {
           </p>
         ) : null}
 
+        {watchlistStatus ? (
+          <p
+            className={cn(
+              "pt-2 text-sm font-medium",
+              watchlistError ? "text-red-700" : "text-[#6b6b6b]",
+            )}
+            role="status"
+          >
+            {watchlistStatus}
+          </p>
+        ) : null}
+
+        {watchlistActive && !watchlistStatus && !status ? (
+          <p className="pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
+            {filteredMovies.length} film
+            {filteredMovies.length === 1 ? "" : "s"} de @{watchlistUsername}
+            {day === WEEK_FILTER ? " cette semaine" : ""}
+            {" · "}
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={clearWatchlistFilter}
+            >
+              tout afficher
+            </button>
+          </p>
+        ) : null}
+
         {nearbyOpen && (geoStatus || status) ? (
           <p
             className={cn(
@@ -537,6 +733,13 @@ export default function App() {
         {emptySearch ? (
           <p className="pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
             Aucun résultat pour « {query.trim()} ».
+          </p>
+        ) : null}
+
+        {emptyWatchlist ? (
+          <p className="pt-2 text-sm font-medium text-[#6b6b6b]" role="status">
+            Aucun film de @{watchlistUsername} à l’affiche
+            {day === WEEK_FILTER ? " cette semaine" : " ce jour"}.
           </p>
         ) : null}
 

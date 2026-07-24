@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup
 
+from enrich import enrich_payload_with_tmdb
 from theaters import get_theater, theaters_for_brand
 
 _CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
@@ -90,6 +91,34 @@ def _ticket_url(showtime: dict[str, Any]) -> str | None:
     return None
 
 
+def _movie_year(movie: dict[str, Any]) -> int | None:
+    for key in ("productionYear", "production_year", "year"):
+        value = movie.get(key)
+        if isinstance(value, int) and 1880 <= value <= 2100:
+            return value
+        if isinstance(value, str) and re.fullmatch(r"\d{4}", value):
+            return int(value)
+
+    releases = movie.get("releases") or []
+    if isinstance(releases, dict):
+        releases = [releases]
+    for release in releases:
+        if not isinstance(release, dict):
+            continue
+        date_value = (
+            ((release.get("releaseDate") or {}).get("date") if isinstance(release.get("releaseDate"), dict) else None)
+            or release.get("releaseDate")
+            or release.get("date")
+        )
+        if isinstance(date_value, str):
+            match = re.match(r"(\d{4})", date_value)
+            if match:
+                year = int(match.group(1))
+                if 1880 <= year <= 2100:
+                    return year
+    return None
+
+
 def _normalize_movie(item: dict[str, Any]) -> dict[str, Any]:
     movie = item["movie"]
     poster = movie.get("poster") or {}
@@ -124,6 +153,7 @@ def _normalize_movie(item: dict[str, Any]) -> dict[str, Any]:
         "poster": poster.get("url"),
         "synopsis": (movie.get("synopsis") or "").strip(),
         "url": f"{BASE}/film/fichefilm_gen_cfilm={movie.get('internalId')}.html",
+        "year": _movie_year(movie),
         "sessions": sessions,
     }
 
@@ -222,11 +252,18 @@ def aggregate_brand_payload(
                     "poster": movie.get("poster"),
                     "synopsis": movie.get("synopsis") or "",
                     "url": movie.get("url"),
+                    "tmdb_id": movie.get("tmdb_id"),
+                    "year": movie.get("year"),
                     "theaters": [],
                 }
                 movies_by_id[movie_id] = entry
-            elif not entry.get("poster") and movie.get("poster"):
-                entry["poster"] = movie["poster"]
+            else:
+                if not entry.get("poster") and movie.get("poster"):
+                    entry["poster"] = movie["poster"]
+                if not entry.get("tmdb_id") and movie.get("tmdb_id"):
+                    entry["tmdb_id"] = movie["tmdb_id"]
+                if not entry.get("year") and movie.get("year"):
+                    entry["year"] = movie["year"]
 
             catalog = get_theater(theater["id"]) or {}
             entry["theaters"].append(
@@ -325,5 +362,6 @@ async def fetch_movies_for_brand(
             errors=errors,
         )
 
+    await enrich_payload_with_tmdb(payload)
     _CACHE[cache_key] = (time.time(), payload)
     return payload

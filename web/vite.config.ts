@@ -16,6 +16,8 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:8001",
         changeOrigin: true,
+        timeout: 120_000,
+        proxyTimeout: 120_000,
       },
       "/static/assets": {
         target: "http://127.0.0.1:8001",

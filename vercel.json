@@ -9,6 +9,10 @@
       "maxDuration": 300,
       "memory": 1024
     },
+    "api/letterboxd_watchlist.py": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
     "api/**/*.py": {
       "maxDuration": 60,
       "memory": 1024

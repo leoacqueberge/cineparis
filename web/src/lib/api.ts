@@ -37,9 +37,26 @@ export type Movie = {
   poster?: string | null
   synopsis?: string
   url?: string
+  tmdb_id?: number | null
+  year?: number | null
   theaters: TheaterShowtimes[]
   session_count: number
   theater_count: number
+}
+
+export type WatchlistFilm = {
+  title: string
+  year?: number | null
+  slug?: string | null
+  url?: string | null
+  tmdb_id?: number | null
+}
+
+export type WatchlistResponse = {
+  username: string
+  count: number
+  films: WatchlistFilm[]
+  source?: string
 }
 
 export type MoviesResponse = {
@@ -125,8 +142,10 @@ function mergeWeekMovies(payloads: MoviesResponse[]): Movie[] {
           theater_count: 0,
         }
         byId.set(key, entry)
-      } else if (!entry.poster && movie.poster) {
-        entry.poster = movie.poster
+      } else {
+        if (!entry.poster && movie.poster) entry.poster = movie.poster
+        if (!entry.tmdb_id && movie.tmdb_id) entry.tmdb_id = movie.tmdb_id
+        if (!entry.year && movie.year) entry.year = movie.year
       }
 
       for (const theater of movie.theaters) {
@@ -244,4 +263,88 @@ export async function fetchTheaters(): Promise<Theater[]> {
     )
   }
   return payload as Theater[]
+}
+
+export const LETTERBOXD_USERNAME_KEY = "cineparis:letterboxdUsername"
+
+function normalizeTitle(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+}
+
+export function movieMatchesWatchlist(
+  movie: Movie,
+  films: WatchlistFilm[],
+): boolean {
+  if (!films.length) return false
+
+  if (movie.tmdb_id) {
+    const byId = films.some((film) => film.tmdb_id === movie.tmdb_id)
+    if (byId) return true
+  }
+
+  const titles = new Set(
+    [movie.title, movie.original_title]
+      .map((value) => normalizeTitle(value))
+      .filter(Boolean),
+  )
+  if (!titles.size) return false
+
+  return films.some((film) => {
+    const filmTitle = normalizeTitle(film.title)
+    if (!filmTitle) return false
+    if (titles.has(filmTitle)) {
+      if (
+        film.year &&
+        movie.year &&
+        Math.abs(film.year - movie.year) > 1
+      ) {
+        return false
+      }
+      return true
+    }
+    for (const title of titles) {
+      if (
+        (title.length >= 6 && filmTitle.includes(title)) ||
+        (filmTitle.length >= 6 && title.includes(filmTitle))
+      ) {
+        return true
+      }
+    }
+    return false
+  })
+}
+
+export function filterMoviesByWatchlist(
+  movies: Movie[],
+  films: WatchlistFilm[],
+): Movie[] {
+  if (!films.length) return movies
+  return movies.filter((movie) => movieMatchesWatchlist(movie, films))
+}
+
+export async function fetchWatchlist(
+  username: string,
+): Promise<WatchlistResponse> {
+  const params = new URLSearchParams({ username: username.trim() })
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}/api/letterboxd_watchlist?${params}`)
+  } catch {
+    throw new Error(
+      "Impossible de joindre l’API. Vérifie que le serveur tourne (npm run dev).",
+    )
+  }
+  const payload = (await parseJson(response)) as {
+    detail?: string
+  } & WatchlistResponse
+  if (!response.ok) {
+    throw new Error(payload.detail || "Impossible de charger la watchlist.")
+  }
+  return payload
 }

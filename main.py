@@ -4,16 +4,21 @@ import os
 from datetime import date, timedelta
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+ROOT = Path(__file__).parent
+load_dotenv(ROOT / ".env")
+
 from db import DatabaseError, get_snapshot, supabase_configured, upsert_snapshot
+from enrich import enrich_payload_with_tmdb
+from letterboxd import LetterboxdError, fetch_watchlist
 from scraper import AllocineError, fetch_movies_for_brand, fetch_showtimes
 from sync import run_daily_sync
 from theaters import BRANDS, THEATERS, get_theater
-
-ROOT = Path(__file__).parent
+from tmdb import tmdb_configured
 
 _DEFAULT_ORIGINS = [
     "http://127.0.0.1:5173",
@@ -25,7 +30,7 @@ _EXTRA_ORIGINS = [
     if origin.strip()
 ]
 
-app = FastAPI(title="CineParis", version="0.4.0")
+app = FastAPI(title="CineParis", version="0.5.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[*_DEFAULT_ORIGINS, *_EXTRA_ORIGINS],
@@ -42,10 +47,11 @@ if os.getenv("VERCEL") != "1":
 async def home() -> dict:
     return {
         "app": "CineParis API",
-        "version": "0.4.1",
+        "version": "0.5.0",
         "docs": "/docs",
         "health": "ok",
         "supabase": supabase_configured(),
+        "tmdb": tmdb_configured(),
     }
 
 
@@ -76,11 +82,18 @@ async def movies(
     if day_value < date.today() - timedelta(days=1):
         raise HTTPException(status_code=400, detail="Date trop ancienne")
 
+    async def _maybe_backfill_tmdb(payload: dict) -> dict:
+        movies = payload.get("movies") or []
+        if tmdb_configured() and any(not movie.get("tmdb_id") for movie in movies):
+            await enrich_payload_with_tmdb(payload)
+        return payload
+
     # 1) Fast path: Supabase snapshot
     if supabase_configured():
         try:
             snapshot = get_snapshot(brand_id, day_value)
             if snapshot:
+                snapshot = await _maybe_backfill_tmdb(snapshot)
                 return snapshot
         except DatabaseError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -107,6 +120,22 @@ async def movies(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Échec du scraping: {exc}") from exc
+
+
+@app.get("/api/letterboxd/watchlist")
+@app.get("/api/letterboxd_watchlist")
+async def letterboxd_watchlist(
+    username: str = Query(..., min_length=2, max_length=30),
+) -> dict:
+    try:
+        return await fetch_watchlist(username)
+    except LetterboxdError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502,
+            detail=f"Impossible de charger la watchlist: {exc}",
+        ) from exc
 
 
 @app.get("/api/showtimes")

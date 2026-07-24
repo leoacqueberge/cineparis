@@ -15,7 +15,7 @@ Une seule commande (API + front) :
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # remplir SUPABASE_* si tu veux la DB
+cp .env.example .env   # SUPABASE_* + TMDB_API_KEY recommandés
 npm install
 npm install --prefix web
 
@@ -27,10 +27,20 @@ Ouvre [http://127.0.0.1:5173](http://127.0.0.1:5173)
 
 Pour ne lancer que le front ou que l’API : `npm run dev:web-only` / `npm run dev:api`.
 
+## Watchlist Letterboxd
+
+Bouton bookmark → username Letterboxd public → filtre les films à l’affiche qui sont dans la watchlist.
+
+Matching via **TMDB** (`TMDB_API_KEY` gratuite sur [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)). Sans clé, le filtre marche encore en matching titres (moins précis).
+
+```http
+GET /api/letterboxd_watchlist?username=leothusiast
+```
+
 ## Supabase (recommandé)
 
 1. Crée un projet sur [supabase.com](https://supabase.com)
-2. SQL Editor → colle / exécute `supabase/schema.sql`
+2. SQL Editor → colle / exécute `supabase/schema.sql` (snapshots + caches TMDB/Letterboxd)
 3. Project Settings → API → copie :
    - `SUPABASE_URL`
    - `service_role` key → `SUPABASE_SERVICE_ROLE_KEY`
@@ -38,6 +48,7 @@ Pour ne lancer que le front ou que l’API : `npm run dev:web-only` / `npm run d
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `CRON_SECRET` (mot de passe long aléatoire)
+   - `TMDB_API_KEY`
    - `SYNC_DAYS=7` (optionnel)
 
 ### Comportement
@@ -58,7 +69,7 @@ Vérifier que Supabase est vu par l’API :
 
 ```bash
 curl https://ton-app.vercel.app/api/health
-# → { "supabase": true, "version": "0.4.1", ... }
+# → { "supabase": true, "tmdb": true, "version": "0.5.0", ... }
 ```
 
 ## Vercel

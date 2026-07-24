@@ -7,6 +7,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from db import purge_before, upsert_snapshot
+from enrich import enrich_payload_with_tmdb
 from scraper import (
     aggregate_brand_payload,
     fetch_all_theater_payloads,
@@ -32,7 +33,7 @@ async def sync_day(day: date) -> dict[str, Any]:
             theaters_queried=len(theater_payloads) if brand == "all" else 0,
             errors=errors,
         )
-        # Fix theaters_queried for non-all brands inside aggregate already
+        await enrich_payload_with_tmdb(payload)
         upsert_snapshot(brand, day, payload)
         stored.append(brand)
 
