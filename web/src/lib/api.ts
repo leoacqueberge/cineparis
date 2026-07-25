@@ -22,7 +22,7 @@ export type DayFilter = string
 export type TheaterShowtimes = {
   id: string
   name: string
-  address: string
+  address?: string
   lat?: number | null
   lng?: number | null
   sessions: Session[]
@@ -35,13 +35,35 @@ export type Movie = {
   runtime?: string
   genres: string[]
   poster?: string | null
-  synopsis?: string
   url?: string
   tmdb_id?: number | null
   year?: number | null
   theaters: TheaterShowtimes[]
   session_count: number
   theater_count: number
+}
+
+/** AlloCiné CDN thumb size for the poster grid (CSS ~200px × 2x DPR). */
+export const POSTER_THUMB = { width: 300, height: 400 } as const
+const LCP_POSTER_COUNT = 6
+
+export function thumbPosterUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined
+  try {
+    const parsed = new URL(url)
+    if (!parsed.hostname.includes("acsta.net")) return url
+    parsed.pathname = parsed.pathname.replace(
+      /^\/(?:[cr]_\d+_\d+\/)?/,
+      `/c_${POSTER_THUMB.width}_${POSTER_THUMB.height}/`,
+    )
+    return parsed.toString()
+  } catch {
+    return url
+  }
+}
+
+export function isPriorityPoster(index: number) {
+  return index < LCP_POSTER_COUNT
 }
 
 export type WatchlistFilm = {
@@ -96,7 +118,6 @@ function localDateValue(date: Date) {
 }
 
 export function buildDays(count = 7) {
-  const weekdays = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
   const today = new Date()
   const days = Array.from({ length: count }, (_, offset) => {
     const day = new Date(today)
@@ -104,12 +125,62 @@ export function buildDays(count = 7) {
     // Local calendar date — not toISOString() (UTC), which is "yesterday"
     // in France between midnight and ~2h in summer.
     const value = localDateValue(day)
-    let label = `${weekdays[(day.getDay() + 6) % 7]} ${day.getDate()}/${day.getMonth() + 1}`
+    let label = `${day.getDate()}/${day.getMonth() + 1}`
     if (offset === 0) label = "Aujourd'hui"
     if (offset === 1) label = "Demain"
     return { value, label }
   })
   return [{ value: WEEK_FILTER, label: "Toute la semaine" }, ...days]
+}
+
+/** Default landing day: today (not the full week). */
+export function defaultDayFilter() {
+  return localDateValue(new Date())
+}
+
+function calendarDayValues(count = 7) {
+  return buildDays(count)
+    .map((item) => item.value)
+    .filter((value) => value !== WEEK_FILTER)
+}
+
+const moviesCache = new Map<string, MoviesResponse>()
+const moviesInflight = new Map<string, Promise<MoviesResponse>>()
+
+function cacheKey(brand: BrandId, day: string) {
+  return `${brand}:${day}`
+}
+
+export function getCachedMovies(
+  brand: BrandId,
+  day: DayFilter,
+): MoviesResponse | null {
+  if (day === WEEK_FILTER) {
+    const days = calendarDayValues()
+    const payloads = days.map((value) => moviesCache.get(cacheKey(brand, value)))
+    if (payloads.some((payload) => !payload)) return null
+    const movies = mergeWeekMovies(payloads as MoviesResponse[])
+    return {
+      brand,
+      date: WEEK_FILTER,
+      movies,
+      count: movies.length,
+      theaters_queried: Math.max(
+        ...(payloads as MoviesResponse[]).map((p) => p.theaters_queried),
+        0,
+      ),
+      theaters_ok: Math.max(
+        ...(payloads as MoviesResponse[]).map((p) => p.theaters_ok),
+        0,
+      ),
+      errors: [
+        ...new Set(
+          (payloads as MoviesResponse[]).flatMap((p) => p.errors || []),
+        ),
+      ].slice(0, 8),
+    }
+  }
+  return moviesCache.get(cacheKey(brand, day)) ?? null
 }
 
 export function formatSessionDay(dateValue: string) {
@@ -219,26 +290,53 @@ async function fetchMoviesForDay(
   brand: BrandId,
   day: string,
 ): Promise<MoviesResponse> {
-  const params = new URLSearchParams({ brand, day })
-  const response = await fetch(`${API_BASE}/api/movies?${params}`)
-  const payload = (await parseJson(response)) as { detail?: string } & MoviesResponse
-  if (!response.ok) {
-    throw new Error(payload.detail || "Erreur serveur")
+  const key = cacheKey(brand, day)
+  const cached = moviesCache.get(key)
+  if (cached) return cached
+
+  const existing = moviesInflight.get(key)
+  if (existing) return existing
+
+  const request = (async () => {
+    const params = new URLSearchParams({ brand, day })
+    const response = await fetch(`${API_BASE}/api/movies?${params}`)
+    const payload = (await parseJson(response)) as {
+      detail?: string
+    } & MoviesResponse
+    if (!response.ok) {
+      throw new Error(payload.detail || "Erreur serveur")
+    }
+    if (payload.movies) {
+      for (const movie of payload.movies) {
+        if (movie.poster) {
+          movie.poster = thumbPosterUrl(movie.poster) ?? movie.poster
+        }
+      }
+    }
+    moviesCache.set(key, payload)
+    return payload
+  })()
+
+  moviesInflight.set(key, request)
+  try {
+    return await request
+  } finally {
+    moviesInflight.delete(key)
   }
-  return payload
 }
 
 export async function fetchMovies(
   brand: BrandId,
   day: DayFilter,
 ): Promise<MoviesResponse> {
+  const cached = getCachedMovies(brand, day)
+  if (cached) return cached
+
   if (day !== WEEK_FILTER) {
     return fetchMoviesForDay(brand, day)
   }
 
-  const days = buildDays()
-    .map((item) => item.value)
-    .filter((value) => value !== WEEK_FILTER)
+  const days = calendarDayValues()
   const payloads = await Promise.all(
     days.map((value) => fetchMoviesForDay(brand, value)),
   )
@@ -251,6 +349,21 @@ export async function fetchMovies(
     theaters_queried: Math.max(...payloads.map((p) => p.theaters_queried), 0),
     theaters_ok: Math.max(...payloads.map((p) => p.theaters_ok), 0),
     errors: [...new Set(payloads.flatMap((p) => p.errors || []))].slice(0, 8),
+  }
+}
+
+/** Warm the in-memory cache for other days without blocking the UI. */
+export function prefetchMovies(brand: BrandId, day: DayFilter) {
+  void fetchMovies(brand, day).catch(() => {
+    /* ignore background prefetch errors */
+  })
+}
+
+export function prefetchUpcomingDays(brand: BrandId, activeDay: DayFilter) {
+  const days = calendarDayValues()
+  for (const value of days) {
+    if (value === activeDay) continue
+    prefetchMovies(brand, value)
   }
 }
 

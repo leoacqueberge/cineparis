@@ -7,6 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).parent
@@ -15,10 +16,19 @@ load_dotenv(ROOT / ".env")
 from db import DatabaseError, get_snapshot, supabase_configured, upsert_snapshot
 from enrich import enrich_payload_with_tmdb
 from letterboxd import LetterboxdError, fetch_watchlist
+from payload import slim_movies_payload
 from scraper import AllocineError, fetch_movies_for_brand, fetch_showtimes
 from sync import run_daily_sync
 from theaters import BRANDS, THEATERS, get_theater
 from tmdb import tmdb_configured
+
+# Snapshot hits are stable for the day; allow CDN + browser reuse.
+_SNAPSHOT_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
+}
+_LIVE_CACHE_HEADERS = {
+    "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
+}
 
 _DEFAULT_ORIGINS = [
     "http://127.0.0.1:5173",
@@ -65,11 +75,17 @@ async def list_brands() -> list[dict]:
     return BRANDS
 
 
+def _movies_response(payload: dict, *, cacheable: bool) -> JSONResponse:
+    body = slim_movies_payload(payload)
+    headers = _SNAPSHOT_CACHE_HEADERS if cacheable else _LIVE_CACHE_HEADERS
+    return JSONResponse(content=body, headers=headers)
+
+
 @app.get("/api/movies")
 async def movies(
     brand: str = Query("all", description="all | ugc | mk2 | dulac"),
     day: str | None = Query(None, description="YYYY-MM-DD"),
-) -> dict:
+) -> JSONResponse:
     brand_id = brand.strip().lower()
     if brand_id not in {b["id"] for b in BRANDS}:
         raise HTTPException(status_code=400, detail="Groupe invalide (all, ugc, mk2, dulac)")
@@ -82,29 +98,24 @@ async def movies(
     if day_value < date.today() - timedelta(days=1):
         raise HTTPException(status_code=400, detail="Date trop ancienne")
 
-    async def _maybe_backfill_tmdb(payload: dict) -> dict:
-        movies = payload.get("movies") or []
-        if tmdb_configured() and any(not movie.get("tmdb_id") for movie in movies):
-            await enrich_payload_with_tmdb(payload)
-        return payload
-
-    # 1) Fast path: Supabase snapshot
+    # 1) Fast path: Supabase snapshot (TMDB ids come from the daily cron)
     if supabase_configured():
         try:
             snapshot = get_snapshot(brand_id, day_value)
             if snapshot:
-                snapshot = await _maybe_backfill_tmdb(snapshot)
-                return snapshot
+                return _movies_response(snapshot, cacheable=True)
         except DatabaseError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
         # 2) Cache miss: scrape once, store, return
         try:
             payload = await fetch_movies_for_brand(brand_id, day_value)
+            if tmdb_configured():
+                await enrich_payload_with_tmdb(payload)
             upsert_snapshot(brand_id, day_value, payload)
             payload = dict(payload)
             payload["source"] = "allocine+supabase"
-            return payload
+            return _movies_response(payload, cacheable=True)
         except AllocineError as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         except Exception as exc:  # noqa: BLE001
@@ -113,9 +124,11 @@ async def movies(
     # 3) No Supabase: live scrape (local/dev)
     try:
         payload = await fetch_movies_for_brand(brand_id, day_value)
+        if tmdb_configured():
+            await enrich_payload_with_tmdb(payload)
         payload = dict(payload)
         payload["source"] = "allocine"
-        return payload
+        return _movies_response(payload, cacheable=False)
     except AllocineError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
