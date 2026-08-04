@@ -809,6 +809,12 @@ export default function App() {
                     }, [])
                   : [{ date: "", sessions: theater.sessions }]
 
+                groups.sort((a, b) => a.date.localeCompare(b.date))
+
+                for (const group of groups) {
+                  group.sessions.sort((a, b) => a.time.localeCompare(b.time))
+                }
+
                 return (
                   <section
                     key={theater.id}
