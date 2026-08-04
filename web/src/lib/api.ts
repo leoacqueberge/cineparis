@@ -299,7 +299,7 @@ async function fetchMoviesForDay(
 
   const request = (async () => {
     const params = new URLSearchParams({ brand, day })
-    const response = await fetch(`${API_BASE}/api/movies?${params}`)
+    const response = await fetch(`${API_BASE}/api/movies_mock`)
     const payload = (await parseJson(response)) as {
       detail?: string
     } & MoviesResponse
