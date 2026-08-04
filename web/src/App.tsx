@@ -759,42 +759,56 @@ export default function App() {
               const isExpanded = expandedMovies.has(movie.id)
 
               return (
-                <article
-                  key={String(movie.id)}
-                  className="flex flex-col overflow-hidden rounded-[5px] border border-white/10"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleMovieExpanded(movie.id)}
-                    className="w-full cursor-pointer p-0 transition-transform active:scale-[0.985]"
+                <>
+                  <article
+                    key={String(movie.id)}
+                    className="flex flex-col overflow-hidden rounded-[5px] border border-white/10"
                   >
-                    {poster ? (
-                      <img
-                        src={poster}
-                        alt={movie.title}
-                        loading="lazy"
-                        className="block aspect-[300/400] w-full bg-[#ececec] object-cover"
-                      />
-                    ) : (
-                      <div className="grid aspect-[300/400] w-full place-items-center bg-[#ececec] px-1.5 text-center text-[11px] font-medium leading-tight text-black">
-                        {movie.title}
-                      </div>
-                    )}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => toggleMovieExpanded(movie.id)}
+                      className="w-full cursor-pointer p-0 transition-transform active:scale-[0.985]"
+                    >
+                      {poster ? (
+                        <img
+                          src={poster}
+                          alt={movie.title}
+                          loading="lazy"
+                          className="block aspect-[300/400] w-full bg-[#ececec] object-cover"
+                        />
+                      ) : (
+                        <div className="grid aspect-[300/400] w-full place-items-center bg-[#ececec] px-1.5 text-center text-[11px] font-medium leading-tight text-black">
+                          {movie.title}
+                        </div>
+                      )}
+                    </button>
+                  </article>
 
                   {isExpanded ? (
-                    <div className="flex flex-col gap-2 bg-[#1f2329] p-3">
-                      <div className="flex flex-col gap-1">
-                        <h2 className="text-sm font-semibold leading-tight">
-                          {movie.title}
-                        </h2>
-                        <p className="text-[11px] text-white/50">
-                          {movie.runtime} · {movie.theater_count} cinéma
-                          {movie.theater_count > 1 ? "s" : ""}
-                        </p>
+                    <div
+                      key={`${movie.id}-expanded`}
+                      className="col-span-full flex flex-col gap-3 rounded-2xl bg-[#1f2329] p-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex flex-col gap-1">
+                          <h2 className="text-lg font-semibold leading-tight">
+                            {movie.title}
+                          </h2>
+                          <p className="text-[13px] text-white/50">
+                            {movie.runtime} · {movie.theater_count} cinéma
+                            {movie.theater_count > 1 ? "s" : ""}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleMovieExpanded(movie.id)}
+                          className="text-[13px] font-medium text-white/60 hover:text-white"
+                        >
+                          Fermer ✕
+                        </button>
                       </div>
 
-                      <div className="flex flex-col gap-2">
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                         {movie.theaters.map((theater) => {
                           const hasDates = theater.sessions.some(
                             (session) => session.date,
@@ -824,19 +838,19 @@ export default function App() {
                           return (
                             <section
                               key={theater.id}
-                              className="rounded-lg bg-[#2c3138] px-2.5 py-2"
+                              className="rounded-xl bg-[#2c3138] px-3.5 py-3"
                             >
-                              <h3 className="mb-1.5 text-[12px] font-semibold leading-tight">
+                              <h3 className="mb-2.5 text-[14px] font-semibold leading-tight">
                                 {theater.name}
                               </h3>
-                              <div className="flex flex-col gap-2">
+                              <div className="flex flex-col gap-2.5">
                                 {groups.map((group) => (
                                   <div
                                     key={group.date || "day"}
-                                    className="flex flex-col gap-1"
+                                    className="flex flex-col gap-1.5"
                                   >
                                     {group.date ? (
-                                      <p className="text-[11px] font-medium text-white/40">
+                                      <p className="text-[12px] font-medium text-white/40">
                                         {formatSessionDay(group.date)}
                                       </p>
                                     ) : null}
@@ -844,16 +858,16 @@ export default function App() {
                                       {group.sessions.map((session) => {
                                         const content = (
                                           <>
-                                            <time className="text-[11px] font-semibold tabular-nums">
+                                            <time className="text-[13px] font-semibold tabular-nums">
                                               {session.time}
                                             </time>
-                                            <span className="text-[10px] font-medium text-white/40">
+                                            <span className="text-xs font-medium text-white/40">
                                               {session.version}
                                             </span>
                                           </>
                                         )
                                         const className =
-                                          "inline-flex items-baseline gap-1 rounded border border-white/10 bg-[#1f2329] px-1.5 py-1"
+                                          "inline-flex items-baseline gap-1.5 rounded-lg border border-white/10 bg-[#1f2329] px-2.5 py-1.5 text-sm"
                                         const key = `${theater.id}-${session.date || ""}-${session.time}-${session.version}`
                                         if (session.ticket_url) {
                                           return (
@@ -885,7 +899,7 @@ export default function App() {
                       </div>
                     </div>
                   ) : null}
-                </article>
+                </>
               )
             })}
           </main>
