@@ -802,8 +802,13 @@ export default function App() {
                         </p>
                       </div>
 
-                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                        {movie.theaters.map((theater) => {
+                      {!movie.theaters || movie.theaters.length === 0 ? (
+                        <p className="text-sm text-white/50">
+                          Aucun horaire disponible pour ce film.
+                        </p>
+                      ) : (
+                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                          {movie.theaters.map((theater) => {
                           const hasDates = theater.sessions.some(
                             (session) => session.date,
                           )
@@ -890,7 +895,8 @@ export default function App() {
                             </div>
                           )
                         })}
-                      </div>
+                        </div>
+                      )}
                     </>
                   )
                 })()}

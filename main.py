@@ -200,3 +200,98 @@ async def cron_scrape(
         return await run_daily_sync()
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Sync échouée: {exc}") from exc
+
+
+@app.get("/api/movies_mock")
+async def movies_mock() -> JSONResponse:
+    """Mock endpoint for testing frontend - returns fake movie data"""
+    mock_data = {
+        "brand": "all",
+        "date": "2026-08-04",
+        "count": 3,
+        "theaters_queried": 2,
+        "theaters_ok": 2,
+        "errors": [],
+        "movies": [
+            {
+                "id": 1,
+                "title": "Dune: Part Two",
+                "runtime": "2h 46min",
+                "genres": ["Science-Fiction", "Aventure"],
+                "poster": "https://fr.web.img6.acsta.net/c_310_420/pictures/24/01/31/16/36/0177264.jpg",
+                "year": 2024,
+                "session_count": 6,
+                "theater_count": 2,
+                "theaters": [
+                    {
+                        "id": "P0077",
+                        "name": "UGC Ciné Cité Les Halles",
+                        "sessions": [
+                            {"time": "14:00", "version": "VO"},
+                            {"time": "17:30", "version": "VF"},
+                            {"time": "21:00", "version": "VO"}
+                        ]
+                    },
+                    {
+                        "id": "P0017",
+                        "name": "MK2 Bibliothèque",
+                        "sessions": [
+                            {"time": "15:00", "version": "VO"},
+                            {"time": "18:45", "version": "VO"},
+                            {"time": "22:15", "version": "VO"}
+                        ]
+                    }
+                ]
+            },
+            {
+                "id": 2,
+                "title": "Oppenheimer",
+                "runtime": "3h 00min",
+                "genres": ["Biopic", "Drame"],
+                "poster": "https://fr.web.img2.acsta.net/c_310_420/pictures/23/05/23/16/48/1167729.jpg",
+                "year": 2023,
+                "session_count": 4,
+                "theater_count": 2,
+                "theaters": [
+                    {
+                        "id": "P0077",
+                        "name": "UGC Ciné Cité Les Halles",
+                        "sessions": [
+                            {"time": "13:30", "version": "VO"},
+                            {"time": "19:45", "version": "VO"}
+                        ]
+                    },
+                    {
+                        "id": "P0017",
+                        "name": "MK2 Bibliothèque",
+                        "sessions": [
+                            {"time": "16:00", "version": "VO"},
+                            {"time": "20:30", "version": "VO"}
+                        ]
+                    }
+                ]
+            },
+            {
+                "id": 3,
+                "title": "The Holdovers",
+                "runtime": "2h 13min",
+                "genres": ["Comédie", "Drame"],
+                "poster": "https://fr.web.img4.acsta.net/c_310_420/pictures/23/09/14/10/01/3272159.jpg",
+                "year": 2023,
+                "session_count": 3,
+                "theater_count": 1,
+                "theaters": [
+                    {
+                        "id": "P0017",
+                        "name": "MK2 Bibliothèque",
+                        "sessions": [
+                            {"time": "14:15", "version": "VO"},
+                            {"time": "17:00", "version": "VO"},
+                            {"time": "21:30", "version": "VO"}
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    return JSONResponse(content=mock_data)
