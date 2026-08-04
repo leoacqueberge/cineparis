@@ -88,8 +88,8 @@ export default function App() {
   const [watchlistError, setWatchlistError] = useState(false)
   const [watchlistLoading, setWatchlistLoading] = useState(false)
   const [logoSpinKey, setLogoSpinKey] = useState(0)
-  const [expandedMovies, setExpandedMovies] = useState<Set<string | number>>(
-    new Set(),
+  const [selectedMovieId, setSelectedMovieId] = useState<string | number | null>(
+    null,
   )
   const watchlistRef = useRef<HTMLInputElement>(null)
 
@@ -169,19 +169,7 @@ export default function App() {
     setWatchlistStatus("")
     setWatchlistError(false)
     setWatchlistLoading(false)
-    setExpandedMovies(new Set())
-  }
-
-  function toggleMovieExpanded(movieId: string | number) {
-    setExpandedMovies((prev) => {
-      const next = new Set(prev)
-      if (next.has(movieId)) {
-        next.delete(movieId)
-      } else {
-        next.add(movieId)
-      }
-      return next
-    })
+    setSelectedMovieId(null)
   }
 
   function handleLogoClick() {
@@ -753,48 +741,68 @@ export default function App() {
             ))}
           </main>
         ) : (
-          <main className="grid w-full grid-cols-3 gap-2 py-1 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6">
-            {filteredMovies.map((movie) => {
-              const poster = thumbPosterUrl(movie.poster) ?? movie.poster
-              const isExpanded = expandedMovies.has(movie.id)
+          <>
+            <main className="grid w-full grid-cols-3 gap-2 py-1 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6">
+              {filteredMovies.map((movie) => {
+                const poster = thumbPosterUrl(movie.poster) ?? movie.poster
+                const isSelected = selectedMovieId === movie.id
 
-              return (
-                <article
-                  key={String(movie.id)}
-                  className="flex flex-col overflow-hidden rounded-[5px] border border-white/10"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleMovieExpanded(movie.id)}
-                    className="w-full cursor-pointer p-0 transition-transform active:scale-[0.985]"
-                  >
-                    {poster ? (
-                      <img
-                        src={poster}
-                        alt={movie.title}
-                        loading="lazy"
-                        className="block aspect-[300/400] w-full bg-[#ececec] object-cover"
-                      />
-                    ) : (
-                      <div className="grid aspect-[300/400] w-full place-items-center bg-[#ececec] px-1.5 text-center text-[11px] font-medium leading-tight text-black">
-                        {movie.title}
-                      </div>
+                return (
+                  <article
+                    key={String(movie.id)}
+                    className={cn(
+                      "flex flex-col overflow-hidden rounded-[5px] border transition-colors",
+                      isSelected
+                        ? "border-white/40"
+                        : "border-white/10",
                     )}
-                  </button>
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedMovieId(isSelected ? null : movie.id)
+                      }
+                      className="w-full cursor-pointer p-0 transition-transform active:scale-[0.985]"
+                    >
+                      {poster ? (
+                        <img
+                          src={poster}
+                          alt={movie.title}
+                          loading="lazy"
+                          className="block aspect-[300/400] w-full bg-[#ececec] object-cover"
+                        />
+                      ) : (
+                        <div className="grid aspect-[300/400] w-full place-items-center bg-[#ececec] px-1.5 text-center text-[11px] font-medium leading-tight text-black">
+                          {movie.title}
+                        </div>
+                      )}
+                    </button>
+                  </article>
+                )
+              })}
+            </main>
 
-                  {isExpanded ? (
-                    <div className="flex flex-col gap-2 bg-[#1f2329] p-3">
-                      <div className="flex flex-col gap-1">
-                        <h2 className="text-sm font-semibold leading-tight">
+            {selectedMovieId !== null ? (
+              <section className="w-full rounded-2xl bg-[#1f2329] p-4 md:p-5">
+                {(() => {
+                  const movie = filteredMovies.find(
+                    (m) => m.id === selectedMovieId,
+                  )
+                  if (!movie) return null
+
+                  return (
+                    <>
+                      <div className="mb-4 flex flex-col gap-1">
+                        <h2 className="text-lg font-semibold leading-tight md:text-xl">
                           {movie.title}
                         </h2>
-                        <p className="text-[11px] text-white/50">
+                        <p className="text-[13px] text-white/50">
                           {movie.runtime} · {movie.theater_count} cinéma
                           {movie.theater_count > 1 ? "s" : ""}
                         </p>
                       </div>
 
-                      <div className="flex flex-col gap-2">
+                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                         {movie.theaters.map((theater) => {
                           const hasDates = theater.sessions.some(
                             (session) => session.date,
@@ -822,18 +830,18 @@ export default function App() {
                           }
 
                           return (
-                            <section
+                            <div
                               key={theater.id}
-                              className="rounded-lg bg-[#2c3138] px-2.5 py-2"
+                              className="rounded-lg bg-[#2c3138] px-3 py-3"
                             >
-                              <h3 className="mb-1.5 text-[12px] font-semibold leading-tight">
+                              <h3 className="mb-2 text-[13px] font-semibold leading-tight md:text-sm">
                                 {theater.name}
                               </h3>
                               <div className="flex flex-col gap-2">
                                 {groups.map((group) => (
                                   <div
                                     key={group.date || "day"}
-                                    className="flex flex-col gap-1"
+                                    className="flex flex-col gap-1.5"
                                   >
                                     {group.date ? (
                                       <p className="text-[11px] font-medium text-white/40">
@@ -879,16 +887,16 @@ export default function App() {
                                   </div>
                                 ))}
                               </div>
-                            </section>
+                            </div>
                           )
                         })}
                       </div>
-                    </div>
-                  ) : null}
-                </article>
-              )
-            })}
-          </main>
+                    </>
+                  )
+                })()}
+              </section>
+            ) : null}
+          </>
         )}
       </div>
 
