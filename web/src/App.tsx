@@ -842,9 +842,9 @@ export default function App() {
                       return (
                         <section
                           key={theater.id}
-                          className="rounded-xl bg-[#2c3138] px-3.5 py-3"
+                          className="min-w-0 rounded-xl bg-[#2c3138] px-3.5 py-3"
                         >
-                          <h3 className="mb-2.5 text-[14px] font-semibold leading-tight">
+                          <h3 className="mb-2.5 text-[14px] font-semibold leading-tight truncate">
                             {theater.name}
                           </h3>
                           <div className="flex flex-col gap-2.5">
