@@ -88,6 +88,9 @@ export default function App() {
   const [watchlistError, setWatchlistError] = useState(false)
   const [watchlistLoading, setWatchlistLoading] = useState(false)
   const [logoSpinKey, setLogoSpinKey] = useState(0)
+  const [expandedMovies, setExpandedMovies] = useState<Set<string | number>>(
+    new Set(),
+  )
   const watchlistRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -166,6 +169,19 @@ export default function App() {
     setWatchlistStatus("")
     setWatchlistError(false)
     setWatchlistLoading(false)
+    setExpandedMovies(new Set())
+  }
+
+  function toggleMovieExpanded(movieId: string | number) {
+    setExpandedMovies((prev) => {
+      const next = new Set(prev)
+      if (next.has(movieId)) {
+        next.delete(movieId)
+      } else {
+        next.add(movieId)
+      }
+      return next
+    })
   }
 
   function handleLogoClick() {
@@ -737,147 +753,138 @@ export default function App() {
             ))}
           </main>
         ) : (
-          <main className="flex w-full flex-col gap-4 py-1">
+          <main className="grid w-full grid-cols-3 gap-2 py-1 md:grid-cols-4 md:gap-3 lg:grid-cols-5 xl:grid-cols-6">
             {filteredMovies.map((movie) => {
               const poster = thumbPosterUrl(movie.poster) ?? movie.poster
-              const meta = [
-                movie.runtime,
-                ...(movie.genres || []).slice(0, 2),
-                `${movie.theater_count} cinéma${movie.theater_count > 1 ? "s" : ""}`,
-              ]
-                .filter(Boolean)
-                .join(" · ")
+              const isExpanded = expandedMovies.has(movie.id)
 
               return (
                 <article
                   key={String(movie.id)}
-                  className="flex flex-col gap-3 rounded-2xl bg-[#1f2329] p-4"
+                  className="flex flex-col overflow-hidden rounded-[5px] border border-white/10"
                 >
-                  <div className="flex gap-4">
-                    <div className="shrink-0">
-                      {poster ? (
-                        <img
-                          src={poster}
-                          alt={movie.title}
-                          width={100}
-                          height={150}
-                          loading="lazy"
-                          className="block h-[150px] w-[100px] rounded-lg bg-[#ececec] object-cover"
-                        />
-                      ) : (
-                        <div className="grid h-[150px] w-[100px] place-items-center rounded-lg bg-[#ececec] px-2 text-center text-[11px] font-medium leading-tight text-black">
-                          {movie.title}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-                      <h2 className="text-lg font-semibold tracking-tight">
+                  <button
+                    type="button"
+                    onClick={() => toggleMovieExpanded(movie.id)}
+                    className="w-full cursor-pointer p-0 transition-transform active:scale-[0.985]"
+                  >
+                    {poster ? (
+                      <img
+                        src={poster}
+                        alt={movie.title}
+                        loading="lazy"
+                        className="block aspect-[300/400] w-full bg-[#ececec] object-cover"
+                      />
+                    ) : (
+                      <div className="grid aspect-[300/400] w-full place-items-center bg-[#ececec] px-1.5 text-center text-[11px] font-medium leading-tight text-black">
                         {movie.title}
-                      </h2>
-                      {meta ? (
-                        <p className="text-[13px] font-medium text-white/60">
-                          {meta}
+                      </div>
+                    )}
+                  </button>
+
+                  {isExpanded ? (
+                    <div className="flex flex-col gap-2 bg-[#1f2329] p-3">
+                      <div className="flex flex-col gap-1">
+                        <h2 className="text-sm font-semibold leading-tight">
+                          {movie.title}
+                        </h2>
+                        <p className="text-[11px] text-white/50">
+                          {movie.runtime} · {movie.theater_count} cinéma
+                          {movie.theater_count > 1 ? "s" : ""}
                         </p>
-                      ) : null}
-                      {movie.url ? (
-                        <a
-                          href={movie.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[13px] font-medium text-[#00b7ff] hover:underline"
-                        >
-                          Voir sur AlloCiné
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
+                      </div>
 
-                  <div className="flex flex-col gap-3">
-                    {movie.theaters.map((theater) => {
-                      const hasDates = theater.sessions.some(
-                        (session) => session.date,
-                      )
-                      const groups = hasDates
-                        ? theater.sessions.reduce<
-                            { date: string; sessions: Session[] }[]
-                          >((acc, session) => {
-                            const date = session.date || ""
-                            const group = acc.find((item) => item.date === date)
-                            if (group) group.sessions.push(session)
-                            else acc.push({ date, sessions: [session] })
-                            return acc
-                          }, [])
-                        : [{ date: "", sessions: theater.sessions }]
+                      <div className="flex flex-col gap-2">
+                        {movie.theaters.map((theater) => {
+                          const hasDates = theater.sessions.some(
+                            (session) => session.date,
+                          )
+                          const groups = hasDates
+                            ? theater.sessions.reduce<
+                                { date: string; sessions: Session[] }[]
+                              >((acc, session) => {
+                                const date = session.date || ""
+                                const group = acc.find(
+                                  (item) => item.date === date,
+                                )
+                                if (group) group.sessions.push(session)
+                                else acc.push({ date, sessions: [session] })
+                                return acc
+                              }, [])
+                            : [{ date: "", sessions: theater.sessions }]
 
-                      groups.sort((a, b) => a.date.localeCompare(b.date))
+                          groups.sort((a, b) => a.date.localeCompare(b.date))
 
-                      for (const group of groups) {
-                        group.sessions.sort((a, b) =>
-                          a.time.localeCompare(b.time),
-                        )
-                      }
+                          for (const group of groups) {
+                            group.sessions.sort((a, b) =>
+                              a.time.localeCompare(b.time),
+                            )
+                          }
 
-                      return (
-                        <section
-                          key={theater.id}
-                          className="rounded-xl bg-[#2c3138] px-3.5 py-3"
-                        >
-                          <h3 className="mb-2.5 text-[15px] font-semibold">
-                            {theater.name}
-                          </h3>
-                          <div className="flex flex-col gap-2.5">
-                            {groups.map((group) => (
-                              <div
-                                key={group.date || "day"}
-                                className="flex flex-col gap-1.5"
-                              >
-                                {group.date ? (
-                                  <p className="text-[13px] font-medium text-white/50">
-                                    {formatSessionDay(group.date)}
-                                  </p>
-                                ) : null}
-                                <div className="flex flex-wrap gap-2">
-                                  {group.sessions.map((session) => {
-                                    const content = (
-                                      <>
-                                        <time className="font-semibold tabular-nums">
-                                          {session.time}
-                                        </time>
-                                        <span className="text-xs font-medium text-white/50">
-                                          {session.version}
-                                        </span>
-                                      </>
-                                    )
-                                    const className =
-                                      "inline-flex items-baseline gap-1.5 rounded-lg border border-white/10 bg-[#1f2329] px-2.5 py-1.5 text-sm"
-                                    const key = `${theater.id}-${session.date || ""}-${session.time}-${session.version}`
-                                    if (session.ticket_url) {
-                                      return (
-                                        <a
-                                          key={key}
-                                          href={session.ticket_url}
-                                          target="_blank"
-                                          rel="noopener noreferrer"
-                                          className={className}
-                                        >
-                                          {content}
-                                        </a>
-                                      )
-                                    }
-                                    return (
-                                      <span key={key} className={className}>
-                                        {content}
-                                      </span>
-                                    )
-                                  })}
-                                </div>
+                          return (
+                            <section
+                              key={theater.id}
+                              className="rounded-lg bg-[#2c3138] px-2.5 py-2"
+                            >
+                              <h3 className="mb-1.5 text-[12px] font-semibold leading-tight">
+                                {theater.name}
+                              </h3>
+                              <div className="flex flex-col gap-2">
+                                {groups.map((group) => (
+                                  <div
+                                    key={group.date || "day"}
+                                    className="flex flex-col gap-1"
+                                  >
+                                    {group.date ? (
+                                      <p className="text-[11px] font-medium text-white/40">
+                                        {formatSessionDay(group.date)}
+                                      </p>
+                                    ) : null}
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {group.sessions.map((session) => {
+                                        const content = (
+                                          <>
+                                            <time className="text-[11px] font-semibold tabular-nums">
+                                              {session.time}
+                                            </time>
+                                            <span className="text-[10px] font-medium text-white/40">
+                                              {session.version}
+                                            </span>
+                                          </>
+                                        )
+                                        const className =
+                                          "inline-flex items-baseline gap-1 rounded border border-white/10 bg-[#1f2329] px-1.5 py-1"
+                                        const key = `${theater.id}-${session.date || ""}-${session.time}-${session.version}`
+                                        if (session.ticket_url) {
+                                          return (
+                                            <a
+                                              key={key}
+                                              href={session.ticket_url}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className={className}
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              {content}
+                                            </a>
+                                          )
+                                        }
+                                        return (
+                                          <span key={key} className={className}>
+                                            {content}
+                                          </span>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
-                            ))}
-                          </div>
-                        </section>
-                      )
-                    })}
-                  </div>
+                            </section>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </article>
               )
             })}
