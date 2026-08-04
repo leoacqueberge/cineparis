@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react"
 import {
   LETTERBOXD_USERNAME_KEY,
   NEARBY_RADII_KM,
-  POSTER_THUMB,
   WEEK_FILTER,
   buildDays,
   defaultDayFilter,
@@ -13,7 +12,6 @@ import {
   formatDistanceKm,
   formatSessionDay,
   getCachedMovies,
-  isPriorityPoster,
   prefetchUpcomingDays,
   thumbPosterUrl,
   type Movie,
