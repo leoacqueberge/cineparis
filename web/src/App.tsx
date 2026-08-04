@@ -791,7 +791,7 @@ export default function App() {
               .map((movie) => (
                 <div
                   key={`${movie.id}-expanded`}
-                  className="flex w-full flex-col gap-3 rounded-2xl bg-[#1f2329] p-4"
+                  className="-mx-3 flex w-[calc(100%+1.5rem)] flex-col gap-3 rounded-2xl bg-[#1f2329] p-4 sm:-mx-5 sm:w-[calc(100%+2.5rem)] md:-mx-8 md:w-[calc(100%+4rem)]"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex flex-col gap-1">
